@@ -1,0 +1,20 @@
+# Secrets and local configuration.
+.env
+.env.*
+!.env.example
+
+# Editor and machine-specific data.
+.vs/
+**/.cache/
+/editor/compile_commands.json
+
+# Build and verification artifacts.
+/artifacts/
+*.exe
+*.dll
+*.whl
+*.obj
+*.o
+*.pdb
+*.pch
+*.log
