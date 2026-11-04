@@ -241,8 +241,13 @@ void UpdateWidgetsText(const std::wstring& text) {
 }
 
 void WINAPI UpdateWidgetsTextFromThread(PVOID parameter) {
-    auto* text = reinterpret_cast<const std::wstring*>(parameter);
-    UpdateWidgetsText(*text);
+    (void)parameter;
+    std::wstring text;
+    {
+        std::lock_guard<std::mutex> lock(g_dashboardMutex);
+        text = g_dashboardText;
+    }
+    UpdateWidgetsText(text);
 }
 
 wux::FrameworkElement CreateDashboardWidget(const wux::FrameworkElement& tray) {

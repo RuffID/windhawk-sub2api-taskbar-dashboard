@@ -106,6 +106,8 @@ LRESULT CALLBACK PopupWindowProc(HWND window,
 
             std::vector<DashboardAccount> accounts;
             std::wstring lastUpdatedText;
+            std::wstring poolCountText;
+            std::wstring poolRemainingText;
             DashboardVersion dashboardVersion;
             int apiKeyRemainingPercent = -1;
             bool accountsRequestCompleted = false;
@@ -118,6 +120,8 @@ LRESULT CALLBACK PopupWindowProc(HWND window,
                 apiKeyRemainingPercent = g_apiKeyRemainingPercent;
                 accountsRequestCompleted = g_accountsRequestCompleted;
                 accountsAvailable = g_accountsAvailable;
+                poolCountText = g_poolCountText;
+                poolRemainingText = g_dashboardText;
             }
 
             g_popupScrollY = std::clamp(
@@ -138,14 +142,16 @@ LRESULT CALLBACK PopupWindowProc(HWND window,
 
             RECT remainingLabelRect{
                 POPUP_PADDING, 40, POPUP_PADDING + 72, 58};
-            DrawPopupText(dc, smallFont, RGB(190, 190, 190), L"Осталось:",
+            DrawPopupText(dc, smallFont, RGB(190, 190, 190), poolCountText,
                           remainingLabelRect,
                           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
             std::wstring remainingText = apiKeyRemainingPercent >= 0
-                                             ? FormatRemainingText(
-                                                   apiKeyRemainingPercent)
+                                             ? poolRemainingText
                                              : L"н/д";
+            if (apiKeyRemainingPercent < 0 && poolRemainingText == L"Нет данных*") {
+                remainingText += L"*";
+            }
             RECT remainingValueRect{
                 remainingLabelRect.right, remainingLabelRect.top,
                 remainingLabelRect.right + 44, remainingLabelRect.bottom};

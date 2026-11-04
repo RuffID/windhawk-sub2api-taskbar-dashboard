@@ -5,6 +5,8 @@
 #include "../config/settings.h"
 #include "../network/http.h"
 #include "../versions/release_cache.h"
+#include "../accounts/pool.h"
+#include "../accounts/publication.h"
 
 namespace sub2api_dashboard {
 
@@ -13,6 +15,24 @@ struct DashboardRefreshFlagGuard {
         g_dashboardRefreshInProgress = false;
     }
 };
+
+struct RefreshApartmentGuard {
+    RefreshApartmentGuard() { winrt::init_apartment(winrt::apartment_type::multi_threaded); }
+    ~RefreshApartmentGuard() { winrt::uninit_apartment(); }
+};
+
+void NotifyDashboardProjection() {
+    if (IsDashboardRefreshCancelled()) {
+        return;
+    }
+    // The dispatch reads the currently published text on the owning UI thread,
+    // so a delayed notification cannot repaint an older pool over a newer one.
+    PushDashboardTextToTaskbar({});
+    HWND popupWindow = g_popupWindow.load();
+    if (popupWindow && IsWindow(popupWindow)) {
+        PostMessage(popupWindow, WM_REFRESH_DASHBOARD_POPUP, 0, 0);
+    }
+}
 
 void QueueDashboardRefresh() {
     if (g_unloading || g_dashboardUpdatesPaused) {
@@ -57,35 +77,74 @@ void RefreshDashboardText() {
     DashboardRefreshFlagGuard refreshGuard;
     try {
         Settings settings = GetSettingsSnapshot();
-        std::wstring text = GetFoundationText(settings);
-        // Stage 02 only publishes the connection state. Account/average/version
-        // requests will be connected in stages 03-04, using this one snapshot.
-        {
-            std::lock_guard<std::mutex> lock(g_dashboardMutex);
-            if (IsDashboardRefreshCancelled()) {
-                return;
-            }
-            g_dashboardText = text;
-            g_apiKeyRemainingPercent = -1;
-            g_lastUpdatedText = L"—";
-            g_accountsRequestCompleted = false;
-            g_accountsAvailable = false;
-            g_dashboardAccounts.clear();
-        }
-        if (IsDashboardRefreshCancelled()) {
+        if (GetConnectionState(settings) != ConnectionState::Ready) {
             return;
         }
-        PushDashboardTextToTaskbar(text);
-        HWND popupWindow = g_popupWindow.load();
-        if (popupWindow && IsWindow(popupWindow)) {
-            PostMessage(popupWindow, WM_REFRESH_DASHBOARD_POPUP, 0, 0);
+        RefreshApartmentGuard apartment;
+        const ULONGLONG deadline = CreateRefreshDeadline(settings);
+        AccountPoolSnapshot previous;
+        uint64_t generation = 0;
+        {
+            std::lock_guard<std::mutex> lock(g_dashboardMutex);
+            previous = g_accountPoolSnapshot;
+            generation = g_dashboardGeneration;
         }
+        auto pool = LoadAccountPool(previous,
+            [&](const std::wstring& resource, wdj::JsonObject& data, DWORD& status) {
+                return Sub2ApiGet(settings, resource, deadline, data, &status);
+            },
+            [&] { return IsDashboardRefreshCancelled() || GetTickCount64() >= deadline; },
+            [] { return UnixNowSeconds(); });
+        if (!TryPublishAccountPool(std::move(pool), generation, UnixNowSeconds(), true)) { return; }
+        NotifyDashboardProjection();
     } catch (...) {
         LogException(L"RefreshDashboardText", CurrentExceptionHResult());
+        try {
+            {
+                std::lock_guard<std::mutex> lock(g_dashboardMutex);
+                if (IsDashboardRefreshCancelled()) { return; }
+                auto failed = g_accountPoolSnapshot;
+                failed.discoveryComplete = false;
+                failed.quotaReadsSucceeded = false;
+                failed.fullySuccessful = false;
+                for (auto& account : failed.accounts) {
+                    account.discovered = false;
+                    account.quotaRead = QuotaReadState::Failed;
+                }
+                PublishPoolProjection(std::move(failed), UnixNowSeconds(), false);
+            }
+            NotifyDashboardProjection();
+        } catch (...) {
+            LogException(L"PublishRefreshFailure", CurrentExceptionHResult());
+        }
     }
 }
 
+void RefreshDashboardAge() try {
+    if (IsDashboardRefreshCancelled() || g_dashboardAgeInProgress.exchange(true)) { return; }
+    struct AgeGuard {
+        ~AgeGuard() { g_dashboardAgeInProgress = false; }
+    } ageGuard;
+    {
+        std::lock_guard<std::mutex> lock(g_dashboardMutex);
+        if (IsDashboardRefreshCancelled() || !g_accountsRequestCompleted) { return; }
+        auto aged = g_accountPoolSnapshot;
+        aged.summary = CalculateWeeklySummary(aged, UnixNowSeconds());
+        LogPoolCompleteness(aged);
+        PublishPoolProjection(std::move(aged), UnixNowSeconds(), false);
+    }
+    NotifyDashboardProjection();
+} catch (...) {
+    LogException(L"RefreshDashboardAge", CurrentExceptionHResult());
+}
+
 void StopDashboardTimer() {
+    if (g_dashboardAgeTimer) {
+        SetThreadpoolTimer(g_dashboardAgeTimer, nullptr, 0, 0);
+        WaitForThreadpoolTimerCallbacks(g_dashboardAgeTimer, TRUE);
+        CloseThreadpoolTimer(g_dashboardAgeTimer);
+        g_dashboardAgeTimer = nullptr;
+    }
     if (!g_dashboardTimer) {
         return;
     }
@@ -118,12 +177,22 @@ void StartDashboardTimer() {
     DWORD updateIntervalMs = settings.updateIntervalSeconds * 1000UL;
     SetThreadpoolTimer(g_dashboardTimer, &dueTime,
                        updateIntervalMs, 0);
+    // Age is independent of the configured network interval. No HTTP here.
+    g_dashboardAgeTimer = CreateThreadpoolTimer(
+        [](PTP_CALLBACK_INSTANCE, PVOID, PTP_TIMER) { RefreshDashboardAge(); },
+        nullptr, nullptr);
+    if (!g_dashboardAgeTimer) { winrt::throw_last_error(); }
+    SetThreadpoolTimer(g_dashboardAgeTimer, &dueTime, 1000, 0);
 }
 
 void PauseDashboardUpdates() {
-    g_dashboardUpdatesPaused = true;
-    if (g_dashboardCancelEvent && !SetEvent(g_dashboardCancelEvent)) {
-        winrt::throw_last_error();
+    {
+        std::lock_guard<std::mutex> lock(g_dashboardMutex);
+        g_dashboardUpdatesPaused = true;
+        g_dashboardGeneration++;
+        if (g_dashboardCancelEvent && !SetEvent(g_dashboardCancelEvent)) {
+            winrt::throw_last_error();
+        }
     }
     StopDashboardTimer();
     StopDashboardRefreshWork();

@@ -376,8 +376,10 @@ ULONGLONG CreateRefreshDeadline(const Settings& settings) {
 bool Sub2ApiGet(const Settings& settings,
                 const std::wstring& resource,
                 ULONGLONG refreshDeadline,
-                wdj::JsonObject& data) {
+                wdj::JsonObject& data,
+                DWORD* responseStatus = nullptr) {
     data = nullptr;
+    if (responseStatus) { *responseStatus = 0; }
     if (GetConnectionState(settings) != ConnectionState::Ready ||
         IsDashboardRefreshCancelled()) {
         return false;
@@ -401,11 +403,13 @@ bool Sub2ApiGet(const Settings& settings,
     if (!http_detail::HttpGet(settings.sub2apiUrl + L"/api/v1/admin" + resource,
                               settings.requestTimeoutSeconds, refreshDeadline,
                               settings.adminApiKey, response)) {
+        if (responseStatus) { *responseStatus = response.status; }
         if (!IsDashboardRefreshCancelled()) {
             Wh_Log(L"Sub2API transport failed: status=%u", response.status);
         }
         return false;
     }
+    if (responseStatus) { *responseStatus = response.status; }
     if (response.status < 200 || response.status >= 300) {
         Wh_Log(L"Sub2API request failed: status=%u", response.status);
         return false;

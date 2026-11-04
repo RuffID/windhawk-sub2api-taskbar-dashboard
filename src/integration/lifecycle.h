@@ -16,9 +16,11 @@ void CleanupStep(PCWSTR area, Action action) noexcept {
 }
 
 void StopModResources() noexcept {
-    g_unloading = true;
-    g_dashboardUpdatesPaused = true;
     CleanupStep(L"CancelRefresh", [] {
+        std::lock_guard<std::mutex> lock(g_dashboardMutex);
+        g_unloading = true;
+        g_dashboardUpdatesPaused = true;
+        g_dashboardGeneration++;
         if (g_dashboardCancelEvent && !SetEvent(g_dashboardCancelEvent)) {
             winrt::throw_last_error();
         }
@@ -151,6 +153,8 @@ void ApplySettingsChanged() try {
         g_accountsRequestCompleted = false;
         g_accountsAvailable = false;
         g_dashboardAccounts.clear();
+        g_accountPoolSnapshot = {};
+        g_poolCountText = L"Осталось:";
         g_dashboardVersion = {};
     }
     if (!ResetEvent(g_dashboardCancelEvent)) {

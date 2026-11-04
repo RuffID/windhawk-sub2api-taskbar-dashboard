@@ -37,16 +37,23 @@ bool ParseIsoUtcFileTime(const std::wstring& isoUtc, FILETIME& fileTime) {
     }
 
     size_t suffix = 19;
+    ULONGLONG fractionTicks = 0;
     if (suffix < isoUtc.size() && isoUtc[suffix] == L'.') {
         suffix++;
         size_t fractionStart = suffix;
         while (suffix < isoUtc.size() && isoUtc[suffix] >= L'0' &&
                isoUtc[suffix] <= L'9') {
+            if (suffix - fractionStart < 7) {
+                fractionTicks = fractionTicks * 10 + (isoUtc[suffix] - L'0');
+            }
             suffix++;
         }
 
         if (suffix == fractionStart) {
             return false;
+        }
+        for (size_t digits = suffix - fractionStart; digits < 7; digits++) {
+            fractionTicks *= 10;
         }
     }
 
@@ -62,7 +69,16 @@ bool ParseIsoUtcFileTime(const std::wstring& isoUtc, FILETIME& fileTime) {
     resetTime.wMinute = static_cast<WORD>(minute);
     resetTime.wSecond = static_cast<WORD>(second);
 
-    return SystemTimeToFileTime(&resetTime, &fileTime) != FALSE;
+    if (!SystemTimeToFileTime(&resetTime, &fileTime)) {
+        return false;
+    }
+    ULARGE_INTEGER ticks{};
+    ticks.LowPart = fileTime.dwLowDateTime;
+    ticks.HighPart = fileTime.dwHighDateTime;
+    ticks.QuadPart += fractionTicks;
+    fileTime.dwLowDateTime = ticks.LowPart;
+    fileTime.dwHighDateTime = ticks.HighPart;
+    return true;
 }
 
 bool TryGetRemainingTicks(const std::wstring& isoUtc,

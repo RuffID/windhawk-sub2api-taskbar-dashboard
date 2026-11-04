@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform.h"
+#include "account_data.h"
 
 namespace sub2api_dashboard {
 
@@ -15,19 +16,24 @@ PTP_TIMER g_initializeTimer;
 std::atomic<int> g_initializeAttempts;
 std::atomic<int> g_widgetCount;
 std::atomic<bool> g_dashboardRefreshInProgress;
+std::atomic<bool> g_dashboardAgeInProgress;
 std::atomic<bool> g_dashboardUpdatesPaused = true;
 HANDLE g_dashboardCancelEvent;
 std::atomic<bool> g_unloading;
 std::atomic<HWND> g_popupWindow;
 PTP_TIMER g_dashboardTimer;
+PTP_TIMER g_dashboardAgeTimer;
 PTP_WORK g_dashboardRefreshWork;
 std::mutex g_dashboardMutex;
+uint64_t g_dashboardGeneration = 0;  // Guarded by g_dashboardMutex.
 std::mutex g_dashboardRefreshWorkMutex;
 std::wstring g_dashboardText = L"Подключение не настроено";
 std::wstring g_lastUpdatedText = L"—";
 int g_apiKeyRemainingPercent = -1;
 bool g_accountsRequestCompleted;
 bool g_accountsAvailable;
+AccountPoolSnapshot g_accountPoolSnapshot;
+std::wstring g_poolCountText = L"Осталось:";
 HHOOK g_popupMouseHook;
 bool g_popupClassRegistered;
 int g_popupScrollY;
@@ -78,6 +84,7 @@ struct DashboardAccount {
     bool secondaryIsMonthly = false;
     int availableResetCredits = -1;
     std::wstring resetCreditNearestExpiresAt;
+    std::wstring dataQualityText;
 };
 
 std::vector<DashboardAccount> g_dashboardAccounts;

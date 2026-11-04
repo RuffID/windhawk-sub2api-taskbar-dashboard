@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              sub2api-taskbar-dashboard
 // @name            Sub2API Taskbar Dashboard
-// @description     Independent sub2api taskbar shell; account data integration is not connected yet
+// @description     OpenAI account weekly remainder from sub2api, with partial-data and age indicators
 // @version         0.1
 // @author          P.D.G.
 // @include         explorer.exe
@@ -15,8 +15,9 @@
 
 Independent foundation adapted from Codex LB Taskbar Dashboard 1.3.
 Preserves the taskbar widget, popup styling, DPI scaling and lifecycle.
-Account loading, weekly average and version queries are not connected yet.
-The widget explicitly shows that data is unavailable; it does not invent a percent.
+Loads every accessible OpenAI account page and queries OAuth quota with bounded
+concurrency. Shows the weekly mean with partial-data and age indicators.
+Version queries and the full card adaptation belong to stage 04.
 
 Set the sub2api base URL (optionally with a reverse-proxy path prefix) and an
 administrator API key in Windhawk settings. Both defaults are empty. No requests
@@ -26,7 +27,7 @@ are used. The key is sent only to sub2api in x-api-key, never to GitHub or logs.
 Full and restricted administrator keys are supported without guessing permissions
 from the key prefix. Restricted access needs accounts.read, accounts.identity.read,
 openai.quota.read for the intended OpenAI accounts and global system.read.
-Future quota reads with a full key can trigger the server's already enabled
+Quota reads with a full key can trigger the server's already enabled
 auto-reset check and consume Reset credits. This is allowed. The mod does not
 configure auto-reset or call separate reset operations.
 
@@ -51,7 +52,7 @@ original mod. The existing mod is not modified.
   $description: Полный или ограниченный ключ. Для ограниченного нужны accounts.read, accounts.identity.read, openai.quota.read и system.read. Полный ключ допускает серверную проверку уже включённого автосброса после чтения квоты. По умолчанию пустой.
 - updateIntervalSeconds: 60
   $name: Интервал обновления, секунды
-  $description: Интервал от 30 до 2147483 секунд. Загрузка данных будет подключена на этапе 03.
+  $description: Интервал чтения аккаунтов и квот от 30 до 2147483 секунд. Возраст данных проверяется отдельно.
 - requestTimeoutSeconds: 30
   $name: Таймаут запроса, секунды
   $description: От 30 до 2147483 секунд; каждый запрос также ограничен общим deadline обновления.

@@ -691,6 +691,9 @@ void DrawPopupAccount(HDC dc,
     std::wstring secondaryResetText = account.secondaryResetText.empty()
                                          ? L"n/a"
                                          : L"in " + account.secondaryResetText;
+    if (!account.dataQualityText.empty()) {
+        secondaryResetText = account.dataQualityText;
+    }
     RECT secondaryReset{rightX, resetY, rightX + columnWidth, resetY + 18};
     DrawPopupText(dc, smallFont, RGB(178, 193, 213), secondaryResetText,
                   secondaryReset,
