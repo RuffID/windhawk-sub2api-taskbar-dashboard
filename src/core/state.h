@@ -126,6 +126,7 @@ std::vector<WidgetState> g_widgets;
 
 struct TaskbarRootState {
     DWORD threadId = 0;
+    winrt::weak_ref<wux::FrameworkElement> anchor;
     winrt::weak_ref<wux::XamlRoot> xamlRoot;
 };
 

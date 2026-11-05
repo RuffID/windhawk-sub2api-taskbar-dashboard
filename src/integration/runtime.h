@@ -315,13 +315,20 @@ void StartInitializeTimer() {
                 if (!recoveryRequested && attempt % 5 != 0) {
                     return;
                 }
-                if (g_initialized && g_widgetCount == 0 && attempt % 5 == 0) {
-                    Wh_Log(
-                        L"Widget wasn't added yet, reconnecting XAML watcher");
-                    UninitializeSettingsAndTap();
-                }
-
                 TryInitializeForTaskbar();
+
+                // One working monitor must not suppress discovery on the rest.
+                // Count taskbars, not UI threads: several islands can share one.
+                size_t taskbarCount = GetTaskbarWindows().size();
+                int widgetCount = g_widgetCount.load();
+                if (g_initialized &&
+                    static_cast<size_t>(widgetCount) < taskbarCount &&
+                    attempt % 5 == 0) {
+                    Wh_Log(L"Taskbar widgets incomplete (%d/%zu), reconnecting XAML watcher",
+                           widgetCount, taskbarCount);
+                    UninitializeSettingsAndTap();
+                    InitializeSettingsAndTap();
+                }
             } catch (...) {
                 LogException(L"InitializeTimer", CurrentExceptionHResult());
             }

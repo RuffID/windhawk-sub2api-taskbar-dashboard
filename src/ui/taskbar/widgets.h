@@ -314,23 +314,40 @@ void RevokeWidgetEvents(WidgetState& state) {
 
 void TrackTaskbarRoot(const wux::FrameworkElement& element) {
     auto xamlRoot = element.XamlRoot();
-    if (!xamlRoot) {
-        return;
-    }
-
     DWORD threadId = GetCurrentThreadId();
     std::lock_guard<std::mutex> lock(g_widgetsMutex);
     for (auto& state : g_taskbarRoots) {
-        if (state.threadId == threadId && state.xamlRoot.get() == xamlRoot) {
+        if (state.threadId == threadId &&
+            (state.anchor.get() == element ||
+             (xamlRoot && state.xamlRoot.get() == xamlRoot))) {
+            state.anchor = element;
+            state.xamlRoot = xamlRoot;
             return;
         }
     }
-    g_taskbarRoots.push_back(TaskbarRootState{threadId, xamlRoot});
+    // Diagnostics can report a frame before it is connected to its XAML island.
+    // Keep the frame so recovery can discover its root after loading completes.
+    g_taskbarRoots.push_back(TaskbarRootState{threadId, element, xamlRoot});
+}
+
+wux::FrameworkElement FindTaskbarFrame(const wux::FrameworkElement& element) {
+    for (wux::DependencyObject current = element; current;
+         current = wuxm::VisualTreeHelper::GetParent(current)) {
+        auto frame = current.try_as<wux::FrameworkElement>();
+        if (frame && (IsNamedElement(frame, L"TaskbarFrame") ||
+                      winrt::get_class_name(frame) == L"Taskbar.TaskbarFrame")) {
+            return frame;
+        }
+    }
+    return nullptr;
 }
 
 void EnsureWidgetForTray(const wux::FrameworkElement& element) {
-    if (IsNamedElement(element, L"TaskbarFrame")) {
-        TrackTaskbarRoot(element);
+    // Any descendant can reveal an existing taskbar island during diagnostics
+    // replay, including a widget owned by another mod. Only track the frame.
+    auto frame = FindTaskbarFrame(element);
+    if (frame) {
+        TrackTaskbarRoot(frame);
     }
 
     auto tray = IsNamedElement(element, L"SystemTrayFrameGrid")
@@ -339,7 +356,9 @@ void EnsureWidgetForTray(const wux::FrameworkElement& element) {
     if (!tray) {
         return;
     }
-    TrackTaskbarRoot(tray);
+    if (!frame) {
+        TrackTaskbarRoot(tray);
+    }
 
     auto xamlRoot = tray.XamlRoot();
     if (!xamlRoot) {
@@ -498,12 +517,17 @@ void RestoreWidgetsForCurrentThread() {
                 ++it;
                 continue;
             }
-            auto root = it->xamlRoot.get();
-            if (!root || !root.Content()) {
+            auto anchor = it->anchor.get();
+            if (!anchor) {
                 it = g_taskbarRoots.erase(it);
                 continue;
             }
-            roots.push_back(root);
+            auto root = anchor.XamlRoot();
+            it->xamlRoot = root;
+            if (root && root.Content() &&
+                std::find(roots.begin(), roots.end(), root) == roots.end()) {
+                roots.push_back(root);
+            }
             ++it;
         }
     }

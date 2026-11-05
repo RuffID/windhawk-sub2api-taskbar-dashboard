@@ -203,7 +203,7 @@ HWND WINAPI CreateWindowInBandEx_Hook(DWORD exStyle,
     return window;
 }
 
-std::vector<HWND> GetXamlHostWindows() {
+std::vector<HWND> GetTaskbarWindows() {
     std::vector<HWND> windows;
 
     EnumWindows(
@@ -215,31 +215,38 @@ std::vector<HWND> GetXamlHostWindows() {
                 GetClassName(window, className, ARRAYSIZE(className)) &&
                 (_wcsicmp(className, L"Shell_TrayWnd") == 0 ||
                  _wcsicmp(className, L"Shell_SecondaryTrayWnd") == 0)) {
-                EnumChildWindows(
-                    window,
-                    [](HWND child, LPARAM childParameter) -> BOOL {
-                        WCHAR childClass[64];
-                        DWORD childProcessId = 0;
-                        if (GetWindowThreadProcessId(child, &childProcessId) &&
-                            childProcessId == GetCurrentProcessId() &&
-                            GetClassName(child, childClass,
-                                         ARRAYSIZE(childClass)) &&
-                            (_wcsicmp(childClass,
-                                      L"XamlExplorerHostIslandWindow") == 0 ||
-                             _wcsicmp(childClass,
-                                      L"Windows.UI.Composition.DesktopWindowContentBridge") == 0)) {
-                            auto* result =
-                                reinterpret_cast<std::vector<HWND>*>(childParameter);
-                            result->push_back(child);
-                        }
-                        return TRUE;
-                    },
-                    parameter);
+                auto* result = reinterpret_cast<std::vector<HWND>*>(parameter);
+                result->push_back(window);
             }
 
             return TRUE;
         },
         reinterpret_cast<LPARAM>(&windows));
+
+    return windows;
+}
+
+std::vector<HWND> GetXamlHostWindows() {
+    std::vector<HWND> windows;
+    for (HWND taskbar : GetTaskbarWindows()) {
+        EnumChildWindows(
+            taskbar,
+            [](HWND child, LPARAM parameter) -> BOOL {
+                WCHAR className[64];
+                DWORD processId = 0;
+                if (GetWindowThreadProcessId(child, &processId) &&
+                    processId == GetCurrentProcessId() &&
+                    GetClassName(child, className, ARRAYSIZE(className)) &&
+                    (_wcsicmp(className, L"XamlExplorerHostIslandWindow") == 0 ||
+                     _wcsicmp(className,
+                              L"Windows.UI.Composition.DesktopWindowContentBridge") == 0)) {
+                    auto* result = reinterpret_cast<std::vector<HWND>*>(parameter);
+                    result->push_back(child);
+                }
+                return TRUE;
+            },
+            reinterpret_cast<LPARAM>(&windows));
+    }
 
     EnumWindows(
         [](HWND window, LPARAM parameter) -> BOOL {
