@@ -156,6 +156,75 @@ void TestPages() {
             !invalid.itemsValid, "invalid local ID must mark discovery incomplete");
 }
 
+void TestPagesWithoutCount() {
+    // Arrange / Act / Assert: missing pages is derived at empty/exact/partial boundaries.
+    for (int total : {0, 1, 100, 101, 200}) {
+        auto data = Page(1, total, total == 0 ? L"" : Row(1));
+        data.Remove(L"pages");
+        AccountPage page;
+        Require(ParseAccountPage(data, 1, page), "missing page count must parse");
+        const size_t expected = total <= 100 ? 1 : 2;
+        Require(page.pages == expected && page.total == static_cast<size_t>(total) &&
+                page.page == 1 && page.pageSize == 100,
+                "derived pagination must preserve metadata and round up");
+    }
+
+    // Absence must not mask malformed or contradictory metadata.
+    for (PCWSTR value : {L"null", L"\"2\"", L"false", L"{}", L"[]",
+                         L"0", L"-1", L"1.5", L"2147483648", L"1", L"3"}) {
+        auto data = Json(L"{\"page\":1,\"page_size\":100,\"total\":101,\"items\":[],\"pages\":" +
+                         std::wstring(value) + L"}");
+        AccountPage page;
+        Require(!ParseAccountPage(data, 1, page), "invalid supplied page count must be rejected");
+    }
+    for (PCWSTR field : {L"total", L"page", L"page_size", L"items"}) {
+        auto data = Page(1, 1, Row(1));
+        data.Remove(L"pages");
+        data.Remove(field);
+        AccountPage page;
+        Require(!ParseAccountPage(data, 1, page), "required pagination fields must remain required");
+    }
+    for (PCWSTR value : {L"0", L"null", L"\"100\""}) {
+        auto data = Json(L"{\"page\":1,\"total\":1,\"items\":[],\"page_size\":" +
+                         std::wstring(value) + L"}");
+        AccountPage page;
+        Require(!ParseAccountPage(data, 1, page), "invalid page size must not be used for division");
+    }
+
+    // Arrange: the real loader must reach later pages and quota after discovery.
+    std::vector<std::wstring> paths;
+    std::atomic<int> quotaRequests{0};
+    AccountRequest request = [&](const auto& path, auto& data, DWORD& status) {
+        status = 200;
+        if (path.starts_with(L"/accounts?")) {
+            paths.push_back(path);
+            if (path.ends_with(L"page=1")) { data = Page(1, 3, Rows(1, 2), 2); }
+            else { data = Page(2, 3, Row(3), 2); }
+            data.Remove(L"pages");
+            return true;
+        }
+        for (int id = 1; id <= 3; id++) {
+            if (path == L"/openai/accounts/" + std::to_wstring(id) + L"/quota") {
+                auto identity = L"workspace-" + std::to_wstring(id);
+                data = Quota(L"20", NOW, identity.c_str());
+                quotaRequests++;
+                return true;
+            }
+        }
+        return false;
+    };
+    // Act
+    auto pool = LoadAccountPool({}, request, NEVER_STOP, CLOCK);
+    // Assert
+    Require(paths.size() == 2 && paths[0] == L"/accounts?platform=openai&page_size=100&page=1" &&
+            paths[1] == L"/accounts?platform=openai&page_size=100&page=2",
+            "missing page count must enumerate every derived page");
+    Require(pool.discoveryComplete && pool.expectedRecords == 3 && pool.accounts.size() == 3 &&
+            quotaRequests == 3 && pool.fullySuccessful && pool.summary.usable == 3 &&
+            pool.summary.expected == 3 && pool.summary.percent == 80 && !pool.summary.incomplete,
+            "missing page count must allow quota loading and a complete summary");
+}
+
 void TestNormalization() {
     // Arrange
     auto data = Json(L"{\"fetched_at\":2000000000,\"account_id\":\"w\",\"user_id\":\"u\","
@@ -453,6 +522,7 @@ int main() {
         winrt::init_apartment(winrt::apartment_type::multi_threaded);
         struct ApartmentGuard { ~ApartmentGuard() { winrt::uninit_apartment(); } } apartment;
         TestPages();
+        TestPagesWithoutCount();
         TestNormalization();
         TestAverageAndIdentity();
         TestAgeAndFailures();

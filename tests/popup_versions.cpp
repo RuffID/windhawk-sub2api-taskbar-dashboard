@@ -124,7 +124,8 @@ void TestServerAndUiStates() {
     Require(calls == 0, "cancelled server read makes no requests");
     Require(ReleaseTagUrl(L"v1.2.3+build/space ?#%") ==
         L"https://github.com/Wei-Shaw/sub2api/releases/tag/v1.2.3%2Bbuild%2Fspace%20%3F%23%25", "tag is one URL path segment");
-    Require(std::wstring(MOD_GITHUB_URL).empty(), "unknown mod URL stays disabled");
+    Require(std::wstring(MOD_GITHUB_URL) == L"https://github.com/RuffID/windhawk-sub2api-taskbar-dashboard",
+        "mod icon opens its own repository");
 }
 
 void TestRateLimits() {
@@ -168,6 +169,105 @@ struct TemporaryCache {
         DeleteFileW((path + L".tmp").c_str());
     }
 };
+
+void TestCredentialsAndRequests() {
+    // Arrange / Act: untouched input examples never become a connection or token.
+    Settings settings;
+    settings.sub2apiUrl = WithoutSettingExample(SUB2API_URL_EXAMPLE, SUB2API_URL_EXAMPLE);
+    settings.adminApiKey = WithoutSettingExample(ADMIN_KEY_EXAMPLE, ADMIN_KEY_EXAMPLE);
+    auto token = WithoutSettingExample(GITHUB_TOKEN_EXAMPLE, GITHUB_TOKEN_EXAMPLE);
+    HttpGetRequest github;
+    // Assert
+    Require(GetConnectionState(settings) == ConnectionState::NotConfigured && token.empty(),
+        "input examples are unconfigured");
+    Require(MakeGitHubReleaseRequest(token, github) &&
+        github.headers.find(L"Authorization:") == std::wstring::npos,
+        "optional token example keeps anonymous access");
+
+    // Arrange: synthetic credentials are intentionally distinct.
+    settings.sub2apiUrl = L"https://fixture.invalid/proxy";
+    settings.adminApiKey = L"fixture-admin-secret";
+    settings.githubToken = L"github_pat_fixture-secret";
+    // Act
+    auto admin = MakeSub2ApiRequest(settings, L"/system/version");
+    Require(MakeGitHubReleaseRequest(settings.githubToken, github), "token request accepted");
+    // Assert: exercise the exact request objects passed to the production transport.
+    Require(GetConnectionState(settings) == ConnectionState::Ready &&
+        admin.url == L"https://fixture.invalid/proxy/api/v1/admin/system/version" &&
+        admin.headers == L"Accept: application/json\r\nx-api-key: fixture-admin-secret\r\n" &&
+        !admin.collectRateLimitHeaders && admin.headers.find(settings.githubToken) == std::wstring::npos,
+        "admin request contains only its own credential");
+    Require(github.url == L"https://api.github.com/repos/Wei-Shaw/sub2api/releases?per_page=100" &&
+        github.headers == L"Accept: application/vnd.github+json\r\nAuthorization: Bearer github_pat_fixture-secret\r\n" &&
+        github.collectRateLimitHeaders && github.headers.find(settings.adminApiKey) == std::wstring::npos,
+        "GitHub token stays at fixed HTTPS release endpoint");
+    Require(WithoutSettingExample(settings.adminApiKey, ADMIN_KEY_EXAMPLE) == settings.adminApiKey &&
+        WithoutSettingExample(settings.githubToken, GITHUB_TOKEN_EXAMPLE) == settings.githubToken,
+        "existing configured values are preserved");
+    Require(MakeGitHubReleaseRequest(L"ghp_fixture", github), "classic token accepted without prefix inference");
+
+    // Arrange / Act / Assert: invalid GitHub settings cannot disable account access.
+    for (const auto& invalid : {std::wstring(L"bad\r\nx-api-key: injected"), std::wstring(L"bad token"),
+                               std::wstring(L"bad\tvalue"), std::wstring(L"bad\x7fvalue"),
+                               std::wstring(L"bad\u0430value"), std::wstring(L"bad\0value", 9),
+                               std::wstring(4097, L'x')}) {
+        settings.githubToken = invalid;
+        Require(!MakeGitHubReleaseRequest(invalid, github) && github.url.empty() && github.headers.empty(),
+            "invalid token cannot produce request or retain old credential");
+        Require(GetConnectionState(settings) == ConnectionState::Ready,
+            "invalid optional token leaves account connection ready");
+    }
+    Require(MakeGitHubReleaseRequest({}, github) &&
+        github.headers == L"Accept: application/vnd.github+json\r\n",
+        "clearing token removes authorization");
+}
+
+void TestTokenChangesRespectCache() {
+    // Arrange: one cache shared by anonymous and authenticated settings snapshots.
+    TemporaryCache temporary;
+    EventHandle cancel;
+    SharedReleaseCache cache;
+    Require(cache.Open(temporary.path, cancel.handle), "token fixture lock unavailable");
+    auto stop = [] { return false; };
+    int requests = 0;
+    std::wstring token;
+    auto request = [&](HttpResponse& response) {
+        HttpGetRequest target;
+        Require(MakeGitHubReleaseRequest(token, target), "fixture token rejected");
+        requests++;
+        if (token.empty()) {
+            response.status = 429;
+            response.retryAfter = L"7200";
+        } else {
+            response.status = 200;
+            response.body = LR"([{"draft":false,"tag_name":"v1.2.4"}])";
+        }
+        return true;
+    };
+    // Act / Assert
+    auto limited = CheckPublishedRelease(cache, request, stop, [] { return NOW; });
+    token = L"github_pat_fixture";
+    auto waiting = CheckPublishedRelease(cache, request, stop, [] { return NOW + 3600; });
+    Require(requests == 1 && limited.status == ReleaseCheckStatus::RateLimited &&
+        waiting.status == ReleaseCheckStatus::RateLimited && waiting.nextCheckUtc == NOW + 7200,
+        "adding token cannot bypass persisted Retry-After");
+    auto allowed = CheckPublishedRelease(cache, request, stop, [] { return NOW + 7200; });
+    Require(requests == 2 && allowed.status == ReleaseCheckStatus::Succeeded && allowed.latest == L"v1.2.4",
+        "token request runs when persisted pause expires");
+    token.clear();
+    CheckPublishedRelease(cache, request, stop, [] { return NOW + 7201; });
+    Require(requests == 2, "removing token cannot bypass hourly success cache");
+
+    // Arrange / Act: an expired or revoked token is an error, not an anonymous retry.
+    auto denied = CheckPublishedRelease(cache, [&](HttpResponse& response) {
+        requests++;
+        response.status = 401;
+        return true;
+    }, stop, [] { return NOW + 10800; });
+    // Assert
+    Require(requests == 3 && denied.status == ReleaseCheckStatus::Failed &&
+        denied.nextCheckUtc >= NOW + 14400, "invalid remote token fails and preserves minimum");
+}
 
 void TestCacheAndClients() {
     // Arrange
@@ -280,8 +380,8 @@ void TestAccountPresentationAndPublication() {
     Require(cards.size() == 1 && !cards[0].hasPrimary && cards[0].secondaryIsMonthly && cards[0].secondaryPercent == 80,
         "monthly fills long slot when 5h absent");
     Require(CalculateWeeklySummary(pool, NOW).percent == -1, "monthly never substitutes weekly");
-    Require(cards[0].dataQualityText.find(L"Возраст:") != std::wstring::npos && cards[0].dataQualityText.find(L"Устарело") != std::wstring::npos,
-        "old card percentage has explicit age and stale state");
+    Require(cards[0].dataQualityText == L"Устарело",
+        "old card keeps stale status without elapsed age");
     Require(cards[0].availableResetCredits == -1 && cards[0].secondaryResetText.empty(), "unknown reset count and time stay unknown");
     auto columns = GetPopupLimitColumns(cards[0], RECT{0, 0, 338, 116});
     Require(columns.width == 322 && columns.left == columns.right, "long-only window uses full card width");
@@ -293,8 +393,11 @@ void TestAccountPresentationAndPublication() {
     auto resetBadge = GetResetCreditBadge(card);
     Require(resetBadge.text == L"Reset (3)" && resetBadge.expiryText.empty(), "unknown expiry hides countdown only");
     bool soon = false;
+    constexpr ULONGLONG hour = 60ULL * 60 * 10000000;
+    Require(FormatResetCreditExpiryTicks(43 * hour, soon) == L"1d 19h" && soon,
+        "Reset countdown retains hours after full days");
     constexpr ULONGLONG sevenDays = 7ULL * 24 * 60 * 60 * 10000000;
-    Require(FormatResetCreditExpiryTicks(sevenDays, soon) == L"7d" && soon, "exactly seven days is red");
+    Require(FormatResetCreditExpiryTicks(sevenDays, soon) == L"7d 0h" && soon, "exactly seven days is red");
     FormatResetCreditExpiryTicks(sevenDays + 1, soon);
     Require(!soon, "more than seven days is normal");
     card.hasPrimary = true;
@@ -363,6 +466,8 @@ int main() {
         TestReleaseSelection();
         TestServerAndUiStates();
         TestRateLimits();
+        TestCredentialsAndRequests();
+        TestTokenChangesRespectCache();
         TestCacheAndClients();
         TestAccountPresentationAndPublication();
         std::cout << "Popup and version checks passed\n";

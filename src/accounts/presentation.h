@@ -58,14 +58,9 @@ std::wstring AccountQualityText(const AccountSnapshot& account, double now) {
     } else if (!IsWindowUsable(account.quota.weekly, account.quota, now)) {
         text = L"Weekly н/д / истёк";
     }
-    if (account.quota.fetchedAt.Known()) {
+    if (account.quota.fetchedAt.Known() && now < account.quota.fetchedAt.value) {
         if (!text.empty()) { text += L" · "; }
-        if (now >= account.quota.fetchedAt.value) {
-            auto seconds = static_cast<unsigned long long>(std::floor(now - account.quota.fetchedAt.value));
-            text += L"Возраст: " + std::to_wstring(seconds / 60) + L"м " + std::to_wstring(seconds % 60) + L"с";
-        } else {
-            text += L"Неверное время";
-        }
+        text += L"Неверное время";
     }
     return text;
 }

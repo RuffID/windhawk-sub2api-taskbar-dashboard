@@ -590,12 +590,14 @@ void DrawPopupAccount(HDC dc,
     const auto resetBadge = GetResetCreditBadge(account);
     if (!resetBadge.text.empty()) {
         const auto& resetText = resetBadge.text;
-        SIZE resetSize{};
+        SIZE resetSize{}, expirySize{};
         HGDIOBJ oldFont = SelectObject(dc, smallFont);
         GetTextExtentPoint32(dc, resetText.c_str(),
                              static_cast<int>(resetText.size()), &resetSize);
+        GetTextExtentPoint32(dc, resetBadge.expiryText.c_str(),
+                             static_cast<int>(resetBadge.expiryText.size()), &expirySize);
         SelectObject(dc, oldFont);
-        RECT badgeRect{rect.right - 8 - resetSize.cx - 12, rect.top + 20,
+        RECT badgeRect{rect.right - 8 - std::max(resetSize.cx, expirySize.cx) - 12, rect.top + 20,
                        rect.right - 8, rect.top + 43};
         HBRUSH badgeBrush = CreateSolidBrush(RGB(31, 43, 59));
         HPEN badgePen = CreatePen(PS_SOLID, 1, RGB(69, 88, 114));

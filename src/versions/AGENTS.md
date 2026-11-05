@@ -10,7 +10,10 @@ release_cache.h — атомарный файловый кеш под межпр
 Кеш содержит только tag/status/deadline, никогда Settings или ключ.
 
 Источник релизов — Wei-Shaw/sub2api, включая prerelease, без drafts. Запрос только
-через GitHubGetReleases без Settings/ключа. Taskbar использует серверный has_update;
+через GitHubGetReleases без Settings/административного ключа; только отдельный
+необязательный GitHub-токен из snapshot владельца work. Токен не попадает в кеш,
+его изменение не сбрасывает паузу и не создаёт другой кеш/mutex.
+Taskbar использует серверный has_update;
 warning не считается подтверждённой проверкой. GitHub проверяется независимо.
 Неверный/пустой ответ не означает актуальность. Логи — короткое событие/status/HR,
 серверные и GitHub message/body/headers не выводятся.

@@ -123,7 +123,8 @@ std::wstring FormatResetCreditExpiryTicks(ULONGLONG remainingTicks, bool& expiri
     expiringSoon = remainingTicks <= 7ULL * 24ULL * 60ULL * 60ULL * 10000000ULL;
     ULONGLONG minutes = remainingTicks / (60ULL * 10000000ULL);
     if (minutes >= 24ULL * 60ULL) {
-        return std::to_wstring(minutes / (24ULL * 60ULL)) + L"d";
+        return std::to_wstring(minutes / (24ULL * 60ULL)) + L"d " +
+               std::to_wstring((minutes / 60ULL) % 24ULL) + L"h";
     }
     if (minutes >= 60ULL) {
         return std::to_wstring(minutes / 60ULL) + L"h";

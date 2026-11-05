@@ -66,8 +66,8 @@ void RefreshVersions() {
             SharedReleaseCache cache;
             if (!cache.Open(GetReleaseCachePath(), g_dashboardCancelEvent)) { return; }
             auto release = CheckPublishedRelease(cache,
-                [](HttpResponse& response) {
-                    return GitHubGetReleases(10, GetTickCount64() + 10000, response);
+                [githubToken = settings.githubToken](HttpResponse& response) {
+                    return GitHubGetReleases(githubToken, 10, GetTickCount64() + 10000, response);
                 }, [] { return IsDashboardRefreshCancelled(); }, [] { return ReleaseNowUtc(); });
             version.latest = std::move(release.latest);
             version.releaseCheckStatus = release.status;

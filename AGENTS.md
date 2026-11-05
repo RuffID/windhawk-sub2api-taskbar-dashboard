@@ -35,11 +35,14 @@
 Структура C++: `mod.wh.cpp` — метаданные, настройки и четыре entrypoints;
 `src/` — заголовки одной единицы трансляции, namespace `sub2api_dashboard`.
 Подключение через `src/integration/lifecycle.h`; зависимости и владельцы описаны
-в локальных `AGENTS.md`. Абсолютный include-путь допускается только в
-`@compilerOptions` нового мода (Windhawk собирает stdin из Compiler).
+в локальных `AGENTS.md`. Для production абсолютный include-путь допускается только
+в `@compilerOptions` нового мода (Windhawk собирает stdin из Compiler).
 Внутренние includes относительные. Не создавать отдельную систему сборки.
 `src/accounts/` владеет загрузкой/нормализацией/расчётом, `tests/` — изолированными
-fixtures production-кода. Необязательный `editor/` не создан.
+fixtures production-кода. `editor/` содержит локальную базу clangd, повторяющую
+флаги редактора и `@compilerOptions`; машинный JSON исключён из Git.
+Общую конфигурацию EditorWorkspace переключать на базу редактируемого мода;
+автоматического выбора по `@id` нет. Подробности — в `editor/AGENTS.md`.
 
 Сохранять независимые ID мода, COM CLSID, имена окон, сообщений, mutex и кешей.
 Чужой XAML-виджет допускается только наблюдать ради размещения рядом;

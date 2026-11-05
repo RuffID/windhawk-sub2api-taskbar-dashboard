@@ -206,17 +206,22 @@ bool ParseAccountPage(const wdj::JsonObject& data, size_t requestedPage,
     auto pageSize = ReadInteger(data, L"page_size", 1, 100);
     auto pages = ReadInteger(data, L"pages", 1, INT_MAX);
     wdj::IJsonValue items = nullptr;
-    if (!total.Known() || !page.Known() || !pageSize.Known() || !pages.Known() ||
+    if (!total.Known() || !page.Known() || !pageSize.Known() ||
         page.value != requestedPage ||
-        pages.value != std::max(1.0, std::ceil(total.value / pageSize.value)) ||
         ReadField(data, L"items", wdj::JsonValueType::Array, items) != FieldState::Value) {
+        return false;
+    }
+    const double pageCount = std::max(1.0, std::ceil(total.value / pageSize.value));
+    // Some deployed servers omit pages. Only absence permits deriving it;
+    // a supplied invalid or contradictory value still rejects the response.
+    if (pages.state != FieldState::Missing && (!pages.Known() || pages.value != pageCount)) {
         return false;
     }
     result = {};
     result.total = static_cast<size_t>(total.value);
     result.page = static_cast<size_t>(page.value);
     result.pageSize = static_cast<size_t>(pageSize.value);
-    result.pages = static_cast<size_t>(pages.value);
+    result.pages = static_cast<size_t>(pageCount);
     if (items.GetArray().Size() > result.pageSize) {
         return false;
     }

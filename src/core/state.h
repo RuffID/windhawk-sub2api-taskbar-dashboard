@@ -54,7 +54,7 @@ std::mutex g_widgetsMutex;
 
 constexpr PCWSTR DASHBOARD_OFFLINE_TEXT = L"Сервер недоступен";
 constexpr PCWSTR SUB2API_GITHUB_URL = L"https://github.com/Wei-Shaw/sub2api";
-constexpr PCWSTR MOD_GITHUB_URL = L"";
+constexpr PCWSTR MOD_GITHUB_URL = L"https://github.com/RuffID/windhawk-sub2api-taskbar-dashboard";
 constexpr PCWSTR LOG_FILE_PATH = L"C:\\sub2api-taskbar-dashboard.log";
 constexpr PCWSTR FALLBACK_LOG_DIR_NAME = L"Sub2ApiTaskbarDashboard";
 constexpr PCWSTR FALLBACK_LOG_FILE_NAME = L"dashboard.log";
@@ -68,6 +68,7 @@ constexpr UINT WM_REFRESH_DASHBOARD_POPUP = WM_APP + 0x533;
 struct Settings {
     std::wstring sub2apiUrl;
     std::wstring adminApiKey;
+    std::wstring githubToken;
     DWORD updateIntervalSeconds = 60;
     DWORD requestTimeoutSeconds = 30;
 };

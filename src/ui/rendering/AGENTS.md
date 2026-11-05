@@ -7,10 +7,12 @@ popup.h сохраняет layered dark popup, opaque glyphs, rounded surfaces,
 Renderer принимает только UI-модели из core/state.h, без Settings/ключей/ответов.
 Отдельный badge переавторизации исключён. Неизвестные проценты — n/a;
 Reset показывается только при известном положительном количестве.
-dataQualityText — готовая безопасная UI-строка общего статуса/ошибки/возраста,
+dataQualityText — готовая безопасная UI-строка общего статуса/ошибки без числового возраста,
 имеет отдельную строку под reset. GetPopupLimitColumns сохраняет две колонки
 либо полную ширину длинного окна. GetResetCreditBadge не скрывает известный count
 при неизвестном expiry. Renderer не вычисляет среднее.
+Ширина Reset badge учитывает и count, и отсчёт срока (например 1d 19h),
+чтобы срок помещался без наложения на имя аккаунта.
 Badge версий берётся из versions/presentation.h, цвет меняет только обводку.
 Pending/Unknown/Failed/RateLimited никогда не означают отсутствие обновлений.
 

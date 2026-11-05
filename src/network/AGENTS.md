@@ -7,7 +7,11 @@ http.h переиспользует async WinHTTP. Публичный Sub2ApiGet
 серверную автоматику и не вызывать сброс самостоятельно.
 
 x-api-key добавляется только для sub2api. GitHubGetReleases — отдельный вход
-с фиксированным публичным URL без Settings/ключа. Не отправлять ключ в GitHub,
+с фиксированным HTTPS URL и только необязательным GitHub-токеном, без Settings.
+MakeSub2ApiRequest/MakeGitHubReleaseRequest создают используемые транспортом
+URL/headers раздельно. GitHub-токен идёт в Authorization: Bearer только api.github.com;
+пустой — анонимно, некорректный — ошибка без запроса и без анонимного повтора.
+Не отправлять административный ключ в GitHub или GitHub-токен в sub2api,
 redirects, cookies или автоматическую авторизацию. Не выводить серверные
 body/message/reason и заголовки в UI/логи; диагностика — событие/status/HRESULT.
 

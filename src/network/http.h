@@ -134,6 +134,32 @@ struct HttpResponse {
     std::wstring retryAfter;
 };
 
+struct HttpGetRequest {
+    std::wstring url;
+    std::wstring headers;
+    bool collectRateLimitHeaders = false;
+};
+
+HttpGetRequest MakeSub2ApiRequest(const Settings& settings,
+                                 const std::wstring& resource) {
+    return {settings.sub2apiUrl + L"/api/v1/admin" + resource,
+            L"Accept: application/json\r\nx-api-key: " + settings.adminApiKey + L"\r\n",
+            false};
+}
+
+bool MakeGitHubReleaseRequest(const std::wstring& githubToken,
+                              HttpGetRequest& request) {
+    request = {};
+    if (!IsValidHeaderCredential(githubToken)) { return false; }
+    request.url = L"https://api.github.com/repos/Wei-Shaw/sub2api/releases?per_page=100";
+    request.headers = L"Accept: application/vnd.github+json\r\n";
+    request.collectRateLimitHeaders = true;
+    if (!githubToken.empty()) {
+        request.headers += L"Authorization: Bearer " + githubToken + L"\r\n";
+    }
+    return true;
+}
+
 std::wstring QueryOptionalHttpHeader(HINTERNET request, PCWSTR name) {
     DWORD size = 0;
     if (!WinHttpQueryHeaders(request, WINHTTP_QUERY_CUSTOM, name, nullptr,
@@ -169,12 +195,10 @@ namespace http_detail {
 
 constexpr size_t MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 
-bool HttpGet(const std::wstring& url,
+bool HttpGet(const HttpGetRequest& target,
              DWORD timeoutSeconds,
              ULONGLONG refreshDeadline,
-             const std::wstring& adminApiKey,
-             HttpResponse& response,
-             bool collectRateLimitHeaders = false) {
+             HttpResponse& response) {
     response = {};
     if (IsDashboardRefreshCancelled()) {
         return false;
@@ -194,7 +218,7 @@ bool HttpGet(const std::wstring& url,
     components.dwUrlPathLength = static_cast<DWORD>(-1);
     components.dwExtraInfoLength = static_cast<DWORD>(-1);
 
-    if (!WinHttpCrackUrl(url.c_str(), 0, 0, &components)) {
+    if (!WinHttpCrackUrl(target.url.c_str(), 0, 0, &components)) {
         Wh_Log(L"WinHttpCrackUrl failed: %u", GetLastError());
         return false;
     }
@@ -271,18 +295,13 @@ bool HttpGet(const std::wstring& url,
         Wh_Log(L"WinHTTP security options failed: %u", GetLastError());
         return false;
     }
-    std::wstring headers = L"Accept: application/json\r\n";
-    if (!adminApiKey.empty()) {
-        headers += L"x-api-key: " + adminApiKey + L"\r\n";
-    }
-
     if (!asyncState.Prepare(deadline)) {
         return false;
     }
     BOOL sent = WinHttpSendRequest(
-        request.handle, headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS
-                                        : headers.c_str(),
-        headers.empty() ? 0 : static_cast<DWORD>(-1),
+        request.handle, target.headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS
+                                               : target.headers.c_str(),
+        target.headers.empty() ? 0 : static_cast<DWORD>(-1),
         WINHTTP_NO_REQUEST_DATA, 0, 0, context);
     if (!sent) {
         Wh_Log(L"WinHttp request failed: %u", GetLastError());
@@ -312,7 +331,7 @@ bool HttpGet(const std::wstring& url,
     }
 
     response.status = status;
-    if (collectRateLimitHeaders) {
+    if (target.collectRateLimitHeaders) {
         response.rateLimitRemaining = QueryOptionalHttpHeader(request.handle, L"X-RateLimit-Remaining");
         response.rateLimitReset = QueryOptionalHttpHeader(request.handle, L"X-RateLimit-Reset");
         response.retryAfter = QueryOptionalHttpHeader(request.handle, L"Retry-After");
@@ -400,9 +419,9 @@ bool Sub2ApiGet(const Settings& settings,
         }
     }
     HttpResponse response;
-    if (!http_detail::HttpGet(settings.sub2apiUrl + L"/api/v1/admin" + resource,
+    if (!http_detail::HttpGet(MakeSub2ApiRequest(settings, resource),
                               settings.requestTimeoutSeconds, refreshDeadline,
-                              settings.adminApiKey, response)) {
+                              response)) {
         if (responseStatus) { *responseStatus = response.status; }
         if (!IsDashboardRefreshCancelled()) {
             Wh_Log(L"Sub2API transport failed: status=%u", response.status);
@@ -441,14 +460,19 @@ bool Sub2ApiGet(const Settings& settings,
     return true;
 }
 
-// A separate entry point has no Settings/key parameter and a fixed public origin.
+// Only a GitHub token is accepted here; the public HTTPS origin cannot be changed.
 // The version worker owns parsing and the shared hourly cache policy.
-bool GitHubGetReleases(DWORD timeoutSeconds,
+bool GitHubGetReleases(const std::wstring& githubToken,
+                       DWORD timeoutSeconds,
                        ULONGLONG refreshDeadline,
                        HttpResponse& response) {
-    return http_detail::HttpGet(
-        L"https://api.github.com/repos/Wei-Shaw/sub2api/releases?per_page=100",
-        timeoutSeconds, refreshDeadline, {}, response, true);
+    response = {};
+    HttpGetRequest request;
+    if (!MakeGitHubReleaseRequest(githubToken, request)) {
+        Wh_Log(L"GitHub request rejected: invalid token setting");
+        return false;
+    }
+    return http_detail::HttpGet(request, timeoutSeconds, refreshDeadline, response);
 }
 
 }  // namespace sub2api_dashboard
