@@ -2,7 +2,7 @@
 
 #include "../../core/state.h"
 #include "../../core/time.h"
-#include "../../versions/semver.h"
+#include "../../versions/presentation.h"
 
 namespace sub2api_dashboard {
 
@@ -43,38 +43,35 @@ constexpr COLORREF POPUP_CARD_COLOR = RGB(24, 32, 46);
 constexpr int POPUP_TITLE_FONT_HEIGHT = 14;
 constexpr int POPUP_BODY_FONT_HEIGHT = 13;
 constexpr int POPUP_SMALL_FONT_HEIGHT = 12;
-constexpr int POPUP_VERSION_LEFT = 240;
-constexpr COLORREF POPUP_DEFAULT_TEXT_COLOR = RGB(198, 209, 224);
-constexpr COLORREF POPUP_DEFAULT_BORDER_COLOR = RGB(46, 62, 84);
+constexpr int POPUP_VERSION_LEFT = 300;
 
-struct PopupReleaseBadge {
+struct ResetCreditBadge {
     std::wstring text;
-    std::wstring releaseUrl;
-    COLORREF borderColor = POPUP_DEFAULT_BORDER_COLOR;
-    COLORREF textColor = POPUP_DEFAULT_TEXT_COLOR;
+    std::wstring expiryText;
+    bool expiringSoon = false;
 };
 
-PopupReleaseBadge GetPopupReleaseBadge(const DashboardVersion& version) {
-    if (version.releaseCheckStatus == ReleaseCheckStatus::Pending) {
-        return {L"Данные версий пока недоступны", {}};
-    }
-    if (version.releaseCheckStatus == ReleaseCheckStatus::RateLimited) {
-        return {L"Превышено число запросов в GitHub", {}, RGB(242, 113, 113)};
-    }
-    ReleaseVersion latest, current;
-    if (version.releaseCheckStatus == ReleaseCheckStatus::Failed ||
-        !ParseReleaseVersion(version.latest, latest)) {
-        return {L"Не удалось получить новые версии с GitHub", {}, RGB(242, 113, 113)};
-    }
-    if (!ParseReleaseVersion(version.current, current)) {
-        return {L"Не удалось определить текущую версию", {}, RGB(242, 113, 113)};
-    }
-    if (CompareReleaseVersions(latest, current) > 0) {
-        return {L"Доступно: " + version.latest,
-                std::wstring(SUB2API_GITHUB_URL) + L"/releases/tag/" + version.latest,
-                RGB(106, 212, 124)};
-    }
-    return {L"Нет новых версий", {}};
+ResetCreditBadge GetResetCreditBadge(const DashboardAccount& account) {
+    ResetCreditBadge badge;
+    if (account.availableResetCredits <= 0) { return badge; }
+    badge.text = L"Reset (" + std::to_wstring(account.availableResetCredits) + L")";
+    badge.expiryText = FormatResetCreditExpiry(account.resetCreditNearestExpiresAt, badge.expiringSoon);
+    return badge;
+}
+
+struct PopupLimitColumns {
+    int width;
+    int left;
+    int right;
+};
+
+PopupLimitColumns GetPopupLimitColumns(const DashboardAccount& account, const RECT& rect) {
+    int width = rect.right - rect.left - 16;
+    if (account.hasPrimary) { width = (rect.right - rect.left - 24) / 2; }
+    int left = rect.left + 8;
+    int right = left;
+    if (account.hasPrimary) { right += width + 8; }
+    return {width, left, right};
 }
 
 int ScalePopupLength(int length, UINT dpi) {
@@ -590,9 +587,9 @@ void DrawPopupAccount(HDC dc,
     int identityRight = rect.right - 8;
     RECT aliasRect{rect.left + 8, rect.top + 7, identityRight,
                    rect.top + 27};
-    if (account.availableResetCredits > 0) {
-        std::wstring resetText =
-            L"Reset (" + std::to_wstring(account.availableResetCredits) + L")";
+    const auto resetBadge = GetResetCreditBadge(account);
+    if (!resetBadge.text.empty()) {
+        const auto& resetText = resetBadge.text;
         SIZE resetSize{};
         HGDIOBJ oldFont = SelectObject(dc, smallFont);
         GetTextExtentPoint32(dc, resetText.c_str(),
@@ -612,14 +609,11 @@ void DrawPopupAccount(HDC dc,
         DeleteObject(badgeBrush);
         DrawPopupText(dc, smallFont, RGB(220, 220, 220), resetText, badgeRect,
                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        bool expiringSoon = false;
-        std::wstring expiryText = FormatResetCreditExpiry(
-            account.resetCreditNearestExpiresAt, expiringSoon);
         RECT expiryRect{badgeRect.left, rect.top + 3, badgeRect.right - 6,
                         rect.top + 20};
         DrawPopupText(dc, smallFont,
-                      expiringSoon ? RGB(242, 113, 113) : RGB(190, 204, 224),
-                      expiryText, expiryRect, DT_RIGHT | DT_TOP | DT_SINGLELINE);
+                      resetBadge.expiringSoon ? RGB(242, 113, 113) : RGB(190, 204, 224),
+                      resetBadge.expiryText, expiryRect, DT_RIGHT | DT_TOP | DT_SINGLELINE);
         identityRight = badgeRect.left - 6;
         aliasRect.right = identityRight;
     }
@@ -631,14 +625,13 @@ void DrawPopupAccount(HDC dc,
     DrawPopupText(dc, bodyFont, RGB(198, 209, 224), account.email, emailRect,
                   DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
 
-    int columnWidth = account.hasPrimary
-                          ? (rect.right - rect.left - 24) / 2
-                          : rect.right - rect.left - 16;
-    int leftX = rect.left + 8;
-    int rightX = account.hasPrimary ? leftX + columnWidth + 8 : leftX;
+    const auto columns = GetPopupLimitColumns(account, rect);
+    int columnWidth = columns.width;
+    int leftX = columns.left;
+    int rightX = columns.right;
     int labelY = rect.top + 56;
     int barY = rect.top + 78;
-    int resetY = rect.top + 88;
+    int resetY = rect.top + 86;
 
     wchar_t primaryPercent[16];
     if (account.primaryPercent < 0) {
@@ -655,7 +648,7 @@ void DrawPopupAccount(HDC dc,
 
     if (account.hasPrimary) {
         RECT primaryLabel{leftX, labelY, leftX + columnWidth, labelY + 18};
-        DrawPopupText(dc, smallFont, RGB(180, 180, 180), L"5h",
+        DrawPopupText(dc, smallFont, RGB(180, 180, 180), account.primaryLabel,
                       primaryLabel,
                       DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
         DrawPopupText(dc, smallFont, GetPercentColorRef(account.primaryPercent),
@@ -680,9 +673,9 @@ void DrawPopupAccount(HDC dc,
                  GetPercentColorRef(account.secondaryPercent));
 
     if (account.hasPrimary) {
-        std::wstring primaryResetText = L"in ";
-        primaryResetText += account.primaryResetText;
-        RECT primaryReset{leftX, resetY, leftX + columnWidth, resetY + 18};
+        std::wstring primaryResetText = L"n/a";
+        if (!account.primaryResetText.empty()) { primaryResetText = L"in " + account.primaryResetText; }
+        RECT primaryReset{leftX, resetY, leftX + columnWidth, resetY + 14};
         DrawPopupText(dc, smallFont, RGB(178, 193, 213), primaryResetText,
                       primaryReset,
                       DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
@@ -691,13 +684,13 @@ void DrawPopupAccount(HDC dc,
     std::wstring secondaryResetText = account.secondaryResetText.empty()
                                          ? L"n/a"
                                          : L"in " + account.secondaryResetText;
-    if (!account.dataQualityText.empty()) {
-        secondaryResetText = account.dataQualityText;
-    }
-    RECT secondaryReset{rightX, resetY, rightX + columnWidth, resetY + 18};
+    RECT secondaryReset{rightX, resetY, rightX + columnWidth, resetY + 14};
     DrawPopupText(dc, smallFont, RGB(178, 193, 213), secondaryResetText,
                   secondaryReset,
                   DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+    RECT qualityRect{rect.left + 8, rect.top + 101, rect.right - 8, rect.top + 115};
+    DrawPopupText(dc, smallFont, RGB(178, 193, 213), account.dataQualityText,
+                  qualityRect, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
 }
 
 }  // namespace sub2api_dashboard

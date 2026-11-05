@@ -442,7 +442,7 @@ bool Sub2ApiGet(const Settings& settings,
 }
 
 // A separate entry point has no Settings/key parameter and a fixed public origin.
-// Not scheduled by stage 02; stage 04 will add version parsing and cache policy.
+// The version worker owns parsing and the shared hourly cache policy.
 bool GitHubGetReleases(DWORD timeoutSeconds,
                        ULONGLONG refreshDeadline,
                        HttpResponse& response) {

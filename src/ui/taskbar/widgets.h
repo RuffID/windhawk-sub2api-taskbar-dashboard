@@ -2,6 +2,7 @@
 
 #include "../../core/state.h"
 #include "../../core/logging.h"
+#include "../../versions/presentation.h"
 #include "../popup/window.h"
 
 namespace sub2api_dashboard {
@@ -183,11 +184,6 @@ void SetTextBlockDashboardText(const wuxc::TextBlock& textBlock,
         AppendTextRun(textBlock, text.substr(textStart, i - textStart),
                       defaultColor);
     }
-}
-
-bool ShouldShowLatestUpdateIndicator(const DashboardVersion& version,
-                                     int remainingPercent) {
-    return remainingPercent >= 0 && version.latestUpdateAvailable;
 }
 
 void SetWidgetText(const wux::FrameworkElement& widget,

@@ -1,12 +1,27 @@
-# Основа версий
+# Версии
 
-semver.h и release_cache.h перенесены из эталона, namespace адаптирован.
-SemVer нужен renderer; release cache включён в ту же единицу трансляции,
-но чтение/запись и запросы пока не вызываются (подключение — этап 04).
+semver.h — сравнение stable/prerelease (beta.10 > beta.9, stable > beta).
+releases.h — проекция data.version/has_update и публичных releases,
+rate-limit policy и транзакция read/reserve/request/settle с подставными request,
+stop/clock для fixtures. presentation.h — различимые UI-состояния и URL encoding
+исходного tag как одного сегмента пути; знак v/build metadata не теряются.
+release_cache.h — атомарный файловый кеш под межпроцессным mutex.
 Отдельные каталог Sub2ApiTaskbarDashboard и Global mutex не пересекаются с codex-lb.
 Кеш содержит только tag/status/deadline, никогда Settings или ключ.
 
-Будущий источник релизов — Wei-Shaw/sub2api. Сохранять часовой минимум,
-rate-limit delay и независимость серверного признака обновления.
-Не добавлять запросы/интеграцию версий в рамках этапа 02.
+Источник релизов — Wei-Shaw/sub2api, включая prerelease, без drafts. Запрос только
+через GitHubGetReleases без Settings/ключа. Taskbar использует серверный has_update;
+warning не считается подтверждённой проверкой. GitHub проверяется независимо.
+Неверный/пустой ответ не означает актуальность. Логи — короткое событие/status/HR,
+серверные и GitHub message/body/headers не выводятся.
+
+Mutex удерживается через весь запрос: ожидание до 15 секунд с cancel, HTTP до
+10 секунд. Слот записывается до HTTP, Failed/RateLimited/Succeeded/Unknown — после.
+Отмена и исключение завершают Pending с сохранением паузы. После crash Pending
+ограничен сохранённым nextCheckUtc. Ошибка кеша запрещает несогласованный HTTP.
+Manual/reload не обходят часовой минимум. 429, а также 403 с remaining=0,
+Retry-After или rate-limit/abuse message — RateLimited; обычный 403 — Failed.
+Более поздние Reset/Retry-After (секунды/HTTP-date) продлевают паузу, включая
+успешный ответ с remaining=0. Без срока остаётся минимум один час.
+Проверки production-кода находятся в tests/popup_versions.cpp; не запускались.
 

@@ -4,7 +4,7 @@
 #include "../core/refresh_api.h"
 #include "../config/settings.h"
 #include "../network/http.h"
-#include "../versions/release_cache.h"
+#include "../versions/releases.h"
 #include "../accounts/pool.h"
 #include "../accounts/publication.h"
 
@@ -32,6 +32,89 @@ void NotifyDashboardProjection() {
     if (popupWindow && IsWindow(popupWindow)) {
         PostMessage(popupWindow, WM_REFRESH_DASHBOARD_POPUP, 0, 0);
     }
+}
+
+void RefreshVersions() {
+    struct WorkGuard {
+        ~WorkGuard() { g_versionRefreshInProgress = false; }
+    } guard;
+    uint64_t generation = 0;
+    bool ownsGeneration = false;
+    try {
+        if (IsDashboardRefreshCancelled()) { return; }
+        auto settings = GetSettingsSnapshot();
+        if (GetConnectionState(settings) != ConnectionState::Ready) { return; }
+        DashboardVersion previous;
+        {
+            std::lock_guard<std::mutex> lock(g_dashboardMutex);
+            generation = g_dashboardGeneration;
+            previous = g_dashboardVersion;
+            ownsGeneration = true;
+        }
+        RefreshApartmentGuard apartment;
+        // Versions own their budgets; neither budget extends the account deadline.
+        const auto deadline = GetTickCount64() + 10000;
+        auto version = ReadServerVersion(
+            [&](const std::wstring& resource, wdj::JsonObject& data, DWORD& status) {
+                return Sub2ApiGet(settings, resource, deadline, data, &status);
+            }, [] { return IsDashboardRefreshCancelled(); });
+        version.latest = previous.latest;
+        version.releaseCheckStatus = previous.releaseCheckStatus;
+        if (!TryPublishVersion(version, generation)) { return; }
+        NotifyDashboardProjection();
+        try {
+            SharedReleaseCache cache;
+            if (!cache.Open(GetReleaseCachePath(), g_dashboardCancelEvent)) { return; }
+            auto release = CheckPublishedRelease(cache,
+                [](HttpResponse& response) {
+                    return GitHubGetReleases(10, GetTickCount64() + 10000, response);
+                }, [] { return IsDashboardRefreshCancelled(); }, [] { return ReleaseNowUtc(); });
+            version.latest = std::move(release.latest);
+            version.releaseCheckStatus = release.status;
+        } catch (...) {
+            LogException(L"GitHub release cache failed", CurrentExceptionHResult());
+            version.latest.clear();
+            version.releaseCheckStatus = ReleaseCheckStatus::Failed;
+        }
+        if (TryPublishVersion(version, generation)) { NotifyDashboardProjection(); }
+    } catch (...) {
+        LogException(L"Version refresh failed", CurrentExceptionHResult());
+        if (ownsGeneration) {
+            try {
+                DashboardVersion failed;
+                failed.currentStatus = ReleaseCheckStatus::Failed;
+                failed.serverCheckStatus = ReleaseCheckStatus::Failed;
+                failed.releaseCheckStatus = ReleaseCheckStatus::Failed;
+                if (TryPublishVersion(failed, generation)) { NotifyDashboardProjection(); }
+            } catch (...) { LogException(L"Version failure publication failed", CurrentExceptionHResult()); }
+        }
+    }
+}
+
+void QueueVersionRefresh() {
+    std::lock_guard<std::mutex> lock(g_versionRefreshWorkMutex);
+    if (IsDashboardRefreshCancelled() || g_versionRefreshInProgress.exchange(true)) { return; }
+    if (!g_versionRefreshWork) {
+        g_versionRefreshWork = CreateThreadpoolWork(
+            [](PTP_CALLBACK_INSTANCE, PVOID, PTP_WORK) { RefreshVersions(); }, nullptr, nullptr);
+        if (!g_versionRefreshWork) {
+            g_versionRefreshInProgress = false;
+            Wh_Log(L"Version work creation failed: %u", GetLastError());
+            return;
+        }
+    }
+    SubmitThreadpoolWork(g_versionRefreshWork);
+}
+
+void StopVersionRefreshWork() {
+    std::lock_guard<std::mutex> lock(g_versionRefreshWorkMutex);
+    if (g_versionRefreshWork) {
+        WaitForThreadpoolWorkCallbacks(g_versionRefreshWork, TRUE);
+        CloseThreadpoolWork(g_versionRefreshWork);
+        g_versionRefreshWork = nullptr;
+    }
+    // A queued callback cancelled by the drain never constructs WorkGuard.
+    g_versionRefreshInProgress = false;
 }
 
 void QueueDashboardRefresh() {
@@ -71,6 +154,7 @@ void StopDashboardRefreshWork() {
 }
 
 void RefreshDashboardText() {
+    QueueVersionRefresh();
     if (IsDashboardRefreshCancelled() || g_dashboardRefreshInProgress.exchange(true)) {
         return;
     }
@@ -196,6 +280,7 @@ void PauseDashboardUpdates() {
     }
     StopDashboardTimer();
     StopDashboardRefreshWork();
+    StopVersionRefreshWork();
 }
 
 void StopInitializeTimer() {

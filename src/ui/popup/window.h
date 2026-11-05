@@ -140,8 +140,12 @@ LRESULT CALLBACK PopupWindowProc(HWND window,
             RECT refreshButtonRect = GetPopupRefreshButtonRect(rect);
             DrawRefreshButton(dc, smallFont, refreshButtonRect);
 
+            SIZE countSize{};
+            HGDIOBJ measureFont = SelectObject(dc, smallFont);
+            GetTextExtentPoint32(dc, poolCountText.c_str(), static_cast<int>(poolCountText.size()), &countSize);
+            SelectObject(dc, measureFont);
             RECT remainingLabelRect{
-                POPUP_PADDING, 40, POPUP_PADDING + 72, 58};
+                POPUP_PADDING, 40, POPUP_PADDING + countSize.cx, 58};
             DrawPopupText(dc, smallFont, RGB(190, 190, 190), poolCountText,
                           remainingLabelRect,
                           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
@@ -153,17 +157,15 @@ LRESULT CALLBACK PopupWindowProc(HWND window,
                 remainingText += L"*";
             }
             RECT remainingValueRect{
-                remainingLabelRect.right, remainingLabelRect.top,
-                remainingLabelRect.right + 44, remainingLabelRect.bottom};
+                remainingLabelRect.right + 6, remainingLabelRect.top,
+                remainingLabelRect.right + 58, remainingLabelRect.bottom};
             DrawPopupText(dc, smallFont,
                           GetPercentColorRef(apiKeyRemainingPercent),
                           remainingText, remainingValueRect,
                           DT_LEFT | DT_VCENTER | DT_SINGLELINE |
                               DT_END_ELLIPSIS);
 
-            std::wstring versionText = dashboardVersion.current.empty()
-                                           ? L"Текущая: н/д"
-                                           : L"Текущая: " + dashboardVersion.current;
+            std::wstring versionText = CurrentVersionText(dashboardVersion);
             auto badge = GetPopupReleaseBadge(dashboardVersion);
             SIZE updateSize{};
             HGDIOBJ oldFont = SelectObject(dc, smallFont);
@@ -195,6 +197,10 @@ LRESULT CALLBACK PopupWindowProc(HWND window,
                 SelectObject(dc, oldFont);
                 g_popupReleaseRect = updateTextRect;
                 g_popupReleaseRect.left += prefixSize.cx;
+                if (g_popupReleaseRect.left >= g_popupReleaseRect.right) {
+                    g_popupReleaseRect = {};
+                    g_popupReleaseUrl.clear();
+                }
                 // Underline only the clickable tag, not the status prefix.
                 HPEN linkPen = CreatePen(PS_SOLID, 1, badge.textColor);
                 GdiObjectGuard linkPenGuard{linkPen};
@@ -231,8 +237,10 @@ LRESULT CALLBACK PopupWindowProc(HWND window,
                                      addressRect.right + 24, refreshButtonRect.top + 21};
             DrawPopupGithubIcon(canvas, g_popupGithubRect);
 
-            RECT modVersionRect{remainingValueRect.right + 12, 40,
-                                POPUP_VERSION_LEFT - 36, 58};
+            // Keep the complete count and percentage. The optional mod label
+            // yields its space first when the pool count grows.
+            RECT modVersionRect{remainingValueRect.right + 8, 40,
+                                POPUP_VERSION_LEFT - 8, 58};
             std::wstring modVersionText = L"Мод v." WH_MOD_VERSION;
             SIZE modVersionSize{};
             oldFont = SelectObject(dc, smallFont);
@@ -269,6 +277,8 @@ LRESULT CALLBACK PopupWindowProc(HWND window,
                     emptyText = foundationText.c_str();
                 } else if (accountsRequestCompleted && !accountsAvailable) {
                     emptyText = L"Не удалось получить информацию об аккаунтах";
+                } else if (accountsRequestCompleted) {
+                    emptyText = L"Нет доступных OpenAI-аккаунтов";
                 }
                 DrawPopupText(dc, bodyFont, RGB(200, 200, 200),
                               emptyText, emptyRect,

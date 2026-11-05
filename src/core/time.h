@@ -119,13 +119,7 @@ bool TryGetRemainingMinutes(const std::wstring& isoUtc,
     return true;
 }
 
-std::wstring FormatResetCreditExpiry(const std::wstring& isoUtc,
-                                    bool& expiringSoon) {
-    expiringSoon = false;
-    ULONGLONG remainingTicks = 0;
-    if (!TryGetRemainingTicks(isoUtc, remainingTicks)) {
-        return {};
-    }
+std::wstring FormatResetCreditExpiryTicks(ULONGLONG remainingTicks, bool& expiringSoon) {
     expiringSoon = remainingTicks <= 7ULL * 24ULL * 60ULL * 60ULL * 10000000ULL;
     ULONGLONG minutes = remainingTicks / (60ULL * 10000000ULL);
     if (minutes >= 24ULL * 60ULL) {
@@ -138,6 +132,14 @@ std::wstring FormatResetCreditExpiry(const std::wstring& isoUtc,
         return std::to_wstring(minutes) + L"m";
     }
     return remainingTicks > 0 ? L"<1m" : L"0m";
+}
+
+std::wstring FormatResetCreditExpiry(const std::wstring& isoUtc,
+                                    bool& expiringSoon) {
+    expiringSoon = false;
+    ULONGLONG remainingTicks = 0;
+    if (!TryGetRemainingTicks(isoUtc, remainingTicks)) { return {}; }
+    return FormatResetCreditExpiryTicks(remainingTicks, expiringSoon);
 }
 
 std::wstring FormatRemainingDays(const std::wstring& isoUtc) {

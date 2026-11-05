@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              sub2api-taskbar-dashboard
 // @name            Sub2API Taskbar Dashboard
-// @description     OpenAI account weekly remainder from sub2api, with partial-data and age indicators
+// @description     OpenAI weekly remainder, quota popup and sub2api release status
 // @version         0.1
 // @author          P.D.G.
 // @include         explorer.exe
@@ -17,7 +17,10 @@ Independent foundation adapted from Codex LB Taskbar Dashboard 1.3.
 Preserves the taskbar widget, popup styling, DPI scaling and lifecycle.
 Loads every accessible OpenAI account page and queries OAuth quota with bounded
 concurrency. Shows the weekly mean with partial-data and age indicators.
-Version queries and the full card adaptation belong to stage 04.
+Cards retain the original two-column layout, quota reset times and Reset credits,
+with a separate data-quality/age line. Monthly is never a weekly mean.
+Server version/check-updates and independent public GitHub releases (including
+prereleases) run separately from account refresh. Errors do not imply up-to-date.
 
 Set the sub2api base URL (optionally with a reverse-proxy path prefix) and an
 administrator API key in Windhawk settings. Both defaults are empty. No requests
@@ -36,9 +39,13 @@ Each request has a timeout, shares the caller's total deadline, and accepts at
 most 4 MiB. Redirects, cookies and automatic authentication are disabled.
 
 The server releases link points to Wei-Shaw/sub2api. The new mod repository URL
-is not known, so its link is disabled. Version querying belongs to stage 04.
-Logs and future release cache use Sub2ApiTaskbarDashboard, separate from the
+is not known, so its link is disabled. The release cache and interprocess mutex
+enforce an hourly minimum and GitHub Retry-After/rate limits across manual refresh
+and reload. Taskbar update status comes only from the server's has_update.
+Logs and release cache use Sub2ApiTaskbarDashboard, separate from the
 original mod. The existing mod is not modified.
+Implementation has only been inspected statically; compilation, isolated fixtures
+and Windhawk/visual acceptance have not been performed.
 */
 // ==/WindhawkModReadme==
 

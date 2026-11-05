@@ -56,14 +56,15 @@ std::wstring AccountQualityText(const AccountSnapshot& account, double now) {
     } else if (!HasSubscriptionIdentity(account.quota)) {
         text = L"Идентичность н/д";
     } else if (!IsWindowUsable(account.quota.weekly, account.quota, now)) {
-        return L"Weekly н/д / истёк";
+        text = L"Weekly н/д / истёк";
     }
-    if (!text.empty() && account.quota.fetchedAt.Known()) {
+    if (account.quota.fetchedAt.Known()) {
+        if (!text.empty()) { text += L" · "; }
         if (now >= account.quota.fetchedAt.value) {
-            text += L" · " + std::to_wstring(static_cast<unsigned long long>(
-                std::floor(now - account.quota.fetchedAt.value))) + L"с";
+            auto seconds = static_cast<unsigned long long>(std::floor(now - account.quota.fetchedAt.value));
+            text += L"Возраст: " + std::to_wstring(seconds / 60) + L"м " + std::to_wstring(seconds % 60) + L"с";
         } else {
-            text += L" · неверное время";
+            text += L"Неверное время";
         }
     }
     return text;
@@ -83,18 +84,28 @@ std::vector<DashboardAccount> MakeDashboardAccounts(const AccountPoolSnapshot& p
             card.email = account.email.value;
         }
         card.hasPrimary = account.quota.fiveHour.state == FieldState::Value;
-        card.primaryPercent = WindowDisplayPercent(account.quota.fiveHour);
-        // Weekly and monthly remain separate in the source model. The legacy
-        // card has one long slot; stage 04 owns any richer card layout.
+        const QuotaWindow* primaryWindow = &account.quota.fiveHour;
+        // The long card slot prefers weekly; monthly never enters the mean.
         const QuotaWindow* longWindow = &account.quota.weekly;
-        if (account.quota.weekly.state == FieldState::Missing &&
+        if (account.quota.weekly.state != FieldState::Value &&
             account.quota.monthly.state == FieldState::Value) {
             longWindow = &account.quota.monthly;
             card.secondaryIsMonthly = true;
         }
+        if (!card.hasPrimary && account.quota.weekly.state == FieldState::Value &&
+            account.quota.monthly.state == FieldState::Value) {
+            // Both long windows are available, so retain both in the two slots.
+            primaryWindow = &account.quota.monthly;
+            card.hasPrimary = true;
+            card.primaryLabel = L"Monthly";
+        }
+        card.primaryPercent = WindowDisplayPercent(*primaryWindow);
         card.secondaryPercent = WindowDisplayPercent(*longWindow);
-        if (account.quota.fiveHour.resetAt.Known()) {
-            card.primaryResetText = FormatRemainingCompact(UnixToIsoUtc(account.quota.fiveHour.resetAt.value));
+        if (longWindow->state == FieldState::Value && longWindow->remainingPercent.Known()) {
+            card.secondarySortPercent = longWindow->remainingPercent.value;
+        }
+        if (primaryWindow->resetAt.Known()) {
+            card.primaryResetText = FormatRemainingCompact(UnixToIsoUtc(primaryWindow->resetAt.value));
         }
         if (longWindow->resetAt.Known()) {
             auto reset = UnixToIsoUtc(longWindow->resetAt.value);
@@ -109,8 +120,8 @@ std::vector<DashboardAccount> MakeDashboardAccounts(const AccountPoolSnapshot& p
         result.push_back(std::move(card));
     }
     std::stable_sort(result.begin(), result.end(), [](const auto& left, const auto& right) {
-        int leftPercent = left.secondaryPercent;
-        int rightPercent = right.secondaryPercent;
+        double leftPercent = left.secondarySortPercent;
+        double rightPercent = right.secondarySortPercent;
         if (leftPercent < 0) { leftPercent = 101; }
         if (rightPercent < 0) { rightPercent = 101; }
         return leftPercent < rightPercent;

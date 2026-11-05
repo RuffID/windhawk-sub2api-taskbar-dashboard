@@ -27,6 +27,7 @@ void StopModResources() noexcept {
     });
     CleanupStep(L"StopDashboardTimer", [] { StopDashboardTimer(); });
     CleanupStep(L"StopDashboardWork", [] { StopDashboardRefreshWork(); });
+    CleanupStep(L"StopVersionWork", [] { StopVersionRefreshWork(); });
     CleanupStep(L"StopInitializeTimer", [] { StopInitializeTimer(); });
     CleanupStep(L"UninitializeTap", [] { UninitializeSettingsAndTap(); });
     CleanupStep(L"RemoveTaskbarWidgets", [] {

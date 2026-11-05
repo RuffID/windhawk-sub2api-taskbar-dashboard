@@ -133,14 +133,15 @@ struct SharedReleaseCache {
         double status = json.GetNamedNumber(L"status");
         if (json.GetNamedNumber(L"schema") != 1 || !std::isfinite(next) || next < 0 ||
             next > 253402300799.0 || std::floor(next) != next ||
-            !std::isfinite(status) || status < 0 || status > 3 || std::floor(status) != status) {
+            !std::isfinite(status) || status < 0 || status > 4 || std::floor(status) != status) {
             winrt::throw_hresult(HRESULT_FROM_WIN32(ERROR_INVALID_DATA));
         }
         ReleaseCacheData data{static_cast<ULONGLONG>(next),
                               static_cast<ReleaseCheckStatus>(static_cast<int>(status)),
                               std::wstring(json.GetNamedString(L"latest"))};
         ReleaseVersion version;
-        if ((data.status == ReleaseCheckStatus::Succeeded && !ParseReleaseVersion(data.latest, version)) ||
+        if (data.latest.size() > 256 ||
+            (data.status == ReleaseCheckStatus::Succeeded && !ParseReleaseVersion(data.latest, version)) ||
             (data.status != ReleaseCheckStatus::Succeeded && !data.latest.empty())) {
             winrt::throw_hresult(HRESULT_FROM_WIN32(ERROR_INVALID_DATA));
         }

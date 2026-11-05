@@ -24,6 +24,9 @@ std::atomic<HWND> g_popupWindow;
 PTP_TIMER g_dashboardTimer;
 PTP_TIMER g_dashboardAgeTimer;
 PTP_WORK g_dashboardRefreshWork;
+PTP_WORK g_versionRefreshWork;
+std::mutex g_versionRefreshWorkMutex;
+std::atomic<bool> g_versionRefreshInProgress;
 std::mutex g_dashboardMutex;
 uint64_t g_dashboardGeneration = 0;  // Guarded by g_dashboardMutex.
 std::mutex g_dashboardRefreshWorkMutex;
@@ -76,8 +79,10 @@ struct DashboardAccount {
     std::wstring alias;
     std::wstring email;
     bool hasPrimary = false;
+    std::wstring primaryLabel = L"5h";
     int primaryPercent = -1;
     int secondaryPercent = -1;
+    double secondarySortPercent = -1;
     std::wstring primaryResetText;
     std::wstring secondaryResetText;
     std::wstring secondaryDaysText;
@@ -89,11 +94,13 @@ struct DashboardAccount {
 
 std::vector<DashboardAccount> g_dashboardAccounts;
 
-enum class ReleaseCheckStatus { Pending, Succeeded, Failed, RateLimited };
+enum class ReleaseCheckStatus { Pending, Succeeded, Failed, RateLimited, Unknown };
 
 struct DashboardVersion {
     std::wstring current;
     std::wstring latest;
+    ReleaseCheckStatus currentStatus = ReleaseCheckStatus::Pending;
+    ReleaseCheckStatus serverCheckStatus = ReleaseCheckStatus::Pending;
     ReleaseCheckStatus releaseCheckStatus = ReleaseCheckStatus::Pending;
     bool latestUpdateAvailable = false;
 };
