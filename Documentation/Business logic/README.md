@@ -8,6 +8,4 @@
 Ограничения приёмки перечислены в требованиях.
 
 - [Требования к виджету](requirements.md) — область данных, процент и внешний вид.
-- [Открытые вопросы](../Plans/initial-implementation-2026-11-04-(completed)/open-questions.md)
-  — открытых вопросов нет; принятые ограничения вынесены в результаты проверки.
-- [План реализации](../Plans/initial-implementation-2026-11-04-(completed)/main.md).
+- [Результаты и ограничения проверки](../Technical%20documentation/validation-2026-11-05.md).

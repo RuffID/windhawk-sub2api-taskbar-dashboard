@@ -137,4 +137,3 @@ Windows 11. Нажатие открывает popup с карточками и �
 и восстановления виджета в Explorer. Изолированная проверка ошибок и отмены
 проведена; фактическое поведение Explorer этими тестами не подтверждается.
 [Результаты и ограничения](../Technical%20documentation/validation-2026-11-05.md).
-[Открытые вопросы](../Plans/initial-implementation-2026-11-04-(completed)/open-questions.md).

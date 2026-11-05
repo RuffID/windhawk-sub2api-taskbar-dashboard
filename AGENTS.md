@@ -16,8 +16,6 @@
 - `Documentation/Business logic/` — согласованные будущие требования.
 - `Documentation/Technical documentation/` — проверенные факты исходного мода
   и API sub2api, ограничения и ссылки на владеющие исходники.
-- `Documentation/Plans/initial-implementation-2026-11-04-(completed)/` — этапы,
-  подэтапы, зависимости, критерии и открытые вопросы.
 - `../windhawk-codex-lb-taskbar-dashboard/` — эталон внешнего вида, только источник
   для адаптации; `../sub2api/` — источник контрактов сервера.
 

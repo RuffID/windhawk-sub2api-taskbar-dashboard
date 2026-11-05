@@ -31,8 +31,6 @@ OpenAI-аккаунтов sub2api на панели задач и подробн
 - [Техническое обследование](Documentation/Technical%20documentation/README.md).
 - [Данные аккаунтов и проверки этапа 03](Documentation/Technical%20documentation/account-data.md).
 - [Popup, версии и кеш этапа 04](Documentation/Technical%20documentation/popup-and-versions.md).
-- [План реализации](Documentation/Plans/initial-implementation-2026-11-04-(completed)/main.md).
-- [Открытые вопросы](Documentation/Plans/initial-implementation-2026-11-04-(completed)/open-questions.md).
 
 ## Подключение
 

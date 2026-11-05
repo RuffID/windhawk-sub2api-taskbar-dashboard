@@ -4,7 +4,7 @@
 собран и выполнен успешно; пользователь подтвердил компиляцию в Windhawk,
 оформление и обычную работу на одном аккаунте Codex.
 [Результаты и принятые ограничения](validation-2026-11-05.md).
-[Требования](../Business%20logic/requirements.md) · [Этап 04](../Plans/initial-implementation-2026-11-04-(completed)/04-popup-and-versions/main.md).
+[Требования](../Business%20logic/requirements.md).
 
 ## Отображение данных
 
