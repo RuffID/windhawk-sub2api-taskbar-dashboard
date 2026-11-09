@@ -411,8 +411,55 @@ void TestAgeAndFailures() {
         L"\"rate_limit\":{\"primary_window\":{\"used_percent\":20,\"limit_window_seconds\":604800,\"reset_after_seconds\":500}}}"), NOW);
     Require(CalculateWeeklySummary(pool, NOW).percent == 80 && !pool.accounts[0].quota.weekly.resetAt.Known(),
             "unknown absolute reset stays unknown; no synthetic HTTP reset timestamp");
-    pool.accounts[0].quota = ParseAccountQuota(Quota(L"20", NOW + 1), NOW);
-    Require(CalculateWeeklySummary(pool, NOW).percent == -1, "future source time is not fresh");
+    pool.accounts[0].quota = ParseAccountQuota(Quota(L"20", NOW + 6), NOW);
+    Require(CalculateWeeklySummary(pool, NOW).percent == -1, "source time beyond clock tolerance is not fresh");
+}
+
+void TestClockSkew() {
+    // Arrange
+    struct ClockCase {
+        double now;
+        double fetchedAt;
+        bool usable;
+        bool invalidTime;
+    };
+    for (const auto& test : {ClockCase{NOW + 0.5, NOW + 1, true, false},
+                             ClockCase{NOW, NOW + 5, true, false},
+                             ClockCase{NOW - 0.001, NOW + 5, false, true},
+                             ClockCase{NOW, NOW + 6, false, true},
+                             ClockCase{NOW + 900, NOW, true, false},
+                             ClockCase{NOW + 900.001, NOW, false, false}}) {
+        AccountRequest request = [&](const auto& path, auto& data, DWORD&) {
+            if (path.starts_with(L"/accounts?")) {
+                data = Page(1, 1, Row(1));
+            } else {
+                data = Quota(L"20", test.fetchedAt);
+            }
+            return true;
+        };
+
+        // Act
+        auto pool = LoadAccountPool({}, request, NEVER_STOP, [&] { return test.now; });
+        std::lock_guard<std::mutex> lock(g_dashboardMutex);
+        g_lastUpdatedText = L"previous-success";
+        PublishPoolProjection(std::move(pool), test.now, true);
+
+        // Assert
+        Require(g_accountPoolSnapshot.fullySuccessful == test.usable &&
+                g_accountPoolSnapshot.quotaReadsSucceeded == test.usable &&
+                g_apiKeyRemainingPercent == (test.usable ? 80 : -1) &&
+                g_dashboardText == (test.usable ? L"80%" : L"Нет данных*"),
+                "loader and publication must honor clock tolerance and original age limit");
+        Require((g_lastUpdatedText != L"previous-success") == test.usable,
+                "only an accepted quota may advance the successful update time");
+        Require(g_accountPoolSnapshot.accounts[0].quota.fetchedAt.value == test.fetchedAt,
+                "clock tolerance must preserve the original source timestamp");
+        Require(g_dashboardAccounts.size() == 1 &&
+                (g_dashboardAccounts[0].dataQualityText.find(L"Неверное время") != std::wstring::npos) ==
+                    test.invalidTime &&
+                (!g_dashboardAccounts[0].dataQualityText.empty()) == !test.usable,
+                "card quality must use the same clock tolerance as the weekly summary");
+    }
 }
 
 void TestWorkers() {
@@ -526,6 +573,7 @@ int main() {
         TestNormalization();
         TestAverageAndIdentity();
         TestAgeAndFailures();
+        TestClockSkew();
         TestWorkers();
         TestPublication();
         std::cout << "Account data checks passed\n";

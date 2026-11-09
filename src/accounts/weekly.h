@@ -5,8 +5,16 @@
 
 namespace sub2api_dashboard {
 
+constexpr double QUOTA_CLOCK_SKEW_TOLERANCE_SECONDS = 5.0;
+
+bool IsQuotaTimeTooFarAhead(const AccountQuota& quota, double now) {
+    return quota.fetchedAt.Known() &&
+           quota.fetchedAt.value - now > QUOTA_CLOCK_SKEW_TOLERANCE_SECONDS;
+}
+
 bool IsQuotaFresh(const AccountQuota& quota, double now) {
-    return quota.fetchedAt.Known() && now >= quota.fetchedAt.value &&
+    // Separate server/Windows clocks can put a newly fetched quota slightly ahead.
+    return quota.fetchedAt.Known() && !IsQuotaTimeTooFarAhead(quota, now) &&
            now - quota.fetchedAt.value <= 900.0;
 }
 

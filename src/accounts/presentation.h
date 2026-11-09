@@ -58,7 +58,7 @@ std::wstring AccountQualityText(const AccountSnapshot& account, double now) {
     } else if (!IsWindowUsable(account.quota.weekly, account.quota, now)) {
         text = L"Weekly н/д / истёк";
     }
-    if (account.quota.fetchedAt.Known() && now < account.quota.fetchedAt.value) {
+    if (IsQuotaTimeTooFarAhead(account.quota, now)) {
         if (!text.empty()) { text += L" · "; }
         text += L"Неверное время";
     }
