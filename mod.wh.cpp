@@ -2,7 +2,7 @@
 // @id              sub2api-taskbar-dashboard
 // @name            Sub2API Taskbar Dashboard
 // @description     OpenAI weekly remainder, quota popup and sub2api release status
-// @version         0.1
+// @version         0.2
 // @author          P.D.G.
 // @include         explorer.exe
 // @architecture    x86-64

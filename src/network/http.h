@@ -231,7 +231,7 @@ bool HttpGet(const HttpGetRequest& target,
                            components.dwExtraInfoLength);
     }
 
-    WinHttpHandle session(WinHttpOpen(L"Sub2ApiTaskbarDashboard/0.1",
+    WinHttpHandle session(WinHttpOpen(L"Sub2ApiTaskbarDashboard/0.2",
                                       WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                       WINHTTP_NO_PROXY_NAME,
                                       WINHTTP_NO_PROXY_BYPASS, WINHTTP_FLAG_ASYNC));
