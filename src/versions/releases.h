@@ -39,6 +39,25 @@ bool ParseServerUpdate(const wdj::JsonObject& data, bool& available) {
     return true;
 }
 
+// Optional release details must not discard a separately confirmed has_update.
+void ReadServerLatestRelease(const wdj::JsonObject& data, DashboardVersion& version) {
+    std::wstring latest;
+    ReleaseVersion parsed;
+    if (ReadVersionString(data, L"latest_version", latest) && latest.size() <= 256 &&
+        ParseReleaseVersion(latest, parsed)) {
+        version.serverLatest = TrimString(latest);
+    }
+    wdj::IJsonValue info = nullptr;
+    if (!TryGetJsonValue(data, L"release_info", info) || info.ValueType() != wdj::JsonValueType::Object) { return; }
+    std::wstring url;
+    const auto prefix = std::wstring(SUB2API_GITHUB_URL) + L"/releases/tag/";
+    if (ReadVersionString(info.GetObject(), L"html_url", url) && url.size() > prefix.size() &&
+        url.size() <= 2048 && url.starts_with(prefix) &&
+        std::none_of(url.begin(), url.end(), [](wchar_t ch) { return ch <= L' ' || ch == 127; })) {
+        version.serverReleaseUrl = std::move(url);
+    }
+}
+
 ReleaseCheckStatus FindLatestPublishedRelease(const std::wstring& body, std::wstring& latest) {
     latest.clear();
     wdj::JsonArray releases = nullptr;
@@ -181,6 +200,7 @@ DashboardVersion ReadServerVersion(Request request, Stop stop) {
     try {
         if (!stop() && request(L"/system/check-updates", data, status) && ParseServerUpdate(data, version.latestUpdateAvailable)) {
             version.serverCheckStatus = ReleaseCheckStatus::Succeeded;
+            if (version.latestUpdateAvailable) { ReadServerLatestRelease(data, version); }
         } else if (status == 429) { version.serverCheckStatus = ReleaseCheckStatus::RateLimited; }
     } catch (...) { Wh_Log(L"Server update check failed: hr=%08X", CurrentExceptionHResult()); }
     if (!stop() && version.serverCheckStatus == ReleaseCheckStatus::Failed) {

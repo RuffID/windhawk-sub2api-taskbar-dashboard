@@ -33,6 +33,20 @@ struct PopupReleaseBadge {
 };
 
 PopupReleaseBadge GetPopupReleaseBadge(const DashboardVersion& version) {
+    if (version.serverCheckStatus == ReleaseCheckStatus::Succeeded && version.latestUpdateAvailable) {
+        ReleaseVersion serverLatest, githubLatest;
+        const bool hasServerLatest = ParseReleaseVersion(version.serverLatest, serverLatest);
+        if (hasServerLatest && version.releaseCheckStatus == ReleaseCheckStatus::Succeeded &&
+            ParseReleaseVersion(version.latest, githubLatest) && CompareReleaseVersions(githubLatest, serverLatest) > 0) {
+            return {L"Доступно: " + version.latest, ReleaseTagUrl(version.latest), RGB(106, 212, 124)};
+        }
+        std::wstring url = version.serverReleaseUrl;
+        if (url.empty()) { url = std::wstring(SUB2API_GITHUB_URL) + L"/releases/latest"; }
+        if (hasServerLatest) {
+            return {L"Доступно: " + version.serverLatest, url, RGB(106, 212, 124)};
+        }
+        return {L"Доступна latest-версия", url, RGB(106, 212, 124)};
+    }
     if (version.releaseCheckStatus == ReleaseCheckStatus::Pending) {
         return {L"Ожидание проверки GitHub", {}};
     }

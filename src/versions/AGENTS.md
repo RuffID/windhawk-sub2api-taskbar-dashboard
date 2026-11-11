@@ -1,7 +1,7 @@
 # Версии
 
 semver.h — сравнение stable/prerelease (beta.10 > beta.9, stable > beta).
-releases.h — проекция data.version/has_update и публичных releases,
+releases.h — проекция data.version/has_update/latest_version/release_info.html_url и публичных releases,
 rate-limit policy и транзакция read/reserve/request/settle с подставными request,
 stop/clock для fixtures. presentation.h — различимые UI-состояния и URL encoding
 исходного tag как одного сегмента пути; знак v/build metadata не теряются.
@@ -15,6 +15,9 @@ release_cache.h — атомарный файловый кеш под межпр
 его изменение не сбрасывает паузу и не создаёт другой кеш/mutex.
 Taskbar использует серверный has_update;
 warning не считается подтверждённой проверкой. GitHub проверяется независимо.
+Popup показывает подтверждённую серверную latest и заменяет её GitHub-релизом
+только при большем SemVer. Ошибка/пауза GitHub не скрывает серверное обновление;
+неизвестный номер не превращает has_update в «Нет новых версий».
 Неверный/пустой ответ не означает актуальность. Логи — короткое событие/status/HR,
 серверные и GitHub message/body/headers не выводятся.
 
@@ -26,5 +29,6 @@ Manual/reload не обходят часовой минимум. 429, а так�
 Retry-After или rate-limit/abuse message — RateLimited; обычный 403 — Failed.
 Более поздние Reset/Retry-After (секунды/HTTP-date) продлевают паузу, включая
 успешный ответ с remaining=0. Без срока остаётся минимум один час.
-Проверки production-кода находятся в tests/popup_versions.cpp; не запускались.
+Проверки production-кода находятся в tests/popup_versions.cpp; результаты и
+границы выполненных проверок — в Documentation/Technical documentation/popup-and-versions.md.
 

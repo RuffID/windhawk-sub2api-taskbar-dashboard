@@ -12,6 +12,8 @@ Explorer, UI, БД, GitHub, пользовательских файлов или
 popup_versions.cpp — отдельная единица трансляции для production SemVer,
 проекции server version/check-updates, выбора GitHub-релиза, UI-состояний,
 URL encoding, Reset/геометрии колонок, сортировки и publication gate.
+Выбор плашки покрывает серверную latest при старом/недоступном GitHub и замену
+только более новым GitHub-релизом, включая beta; ссылка соответствует источнику.
 CheckPublishedRelease получает фиктивный request/stop/clock. Тесты persistent
 cache используют только уникальный временный файл и mutex, два клиента/потока,
 удаляют свои файлы через RAII; пользовательский кеш/логи не открываются.

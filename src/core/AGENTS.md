@@ -11,7 +11,8 @@ mutex блокирует результаты старых настроек. Н�
 Неизвестные проценты — -1; не создавать тестовые аккаунты в production.
 text_json.h — кодировки, JSON и форматирование; time.h — сроки;
 refresh_api.h разрывает зависимость popup от integration/runtime.h.
-DashboardVersion разделяет current/server-check/GitHub состояния; taskbar
+DashboardVersion разделяет current/server-check/GitHub состояния и хранит
+серверную latest с её официальной ссылкой отдельно от GitHub-кеша; taskbar
 использует только успешный server has_update. time.h форматирует Reset expiry
 через общий tick formatter с включённой границей семи дней.
 

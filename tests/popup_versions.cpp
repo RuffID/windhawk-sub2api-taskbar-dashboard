@@ -58,23 +58,27 @@ void TestServerAndUiStates() {
         if (resource == L"/system/version") { data = Json(LR"({"version":"v1.2.3"})"); }
         else {
             Require(resource == L"/system/check-updates", "only read-only version resources");
-            data = Json(LR"({"has_update":true,"current_version":"wrong-source"})");
+            data = Json(LR"({"has_update":true,"latest_version":"1.2.4","current_version":"wrong-source",
+                "release_info":{"html_url":"https://github.com/Wei-Shaw/sub2api/releases/tag/v1.2.4"}})");
         }
         return true;
     };
     // Act
     auto version = ReadServerVersion(read, [] { return false; });
-    version.latest = L"v1.2.4-beta.10";
+    version.latest = L"v1.2.5-beta.10";
     version.releaseCheckStatus = ReleaseCheckStatus::Succeeded;
     auto badge = GetPopupReleaseBadge(version);
     // Assert
     Require(calls == 2 && version.current == L"v1.2.3" && version.latestUpdateAvailable, "actual server contracts");
+    Require(version.serverLatest == L"1.2.4" &&
+        version.serverReleaseUrl == L"https://github.com/Wei-Shaw/sub2api/releases/tag/v1.2.4", "server release keeps original link despite stripped version prefix");
     Require(ShouldShowLatestUpdateIndicator(version, -1), "server update remains visible with unknown account mean");
     auto githubOnly = version;
     githubOnly.latestUpdateAvailable = false;
     Require(!ShouldShowLatestUpdateIndicator(githubOnly, 80), "GitHub update cannot create server indicator");
-    Require(badge.releaseUrl == L"https://github.com/Wei-Shaw/sub2api/releases/tag/v1.2.4-beta.10" &&
+    Require(badge.releaseUrl == L"https://github.com/Wei-Shaw/sub2api/releases/tag/v1.2.5-beta.10" &&
             badge.borderColor == RGB(106, 212, 124) && badge.textColor == POPUP_DEFAULT_TEXT_COLOR, "new release link and border only");
+    version.latestUpdateAvailable = false;
     version.latest = version.current;
     Require(GetPopupReleaseBadge(version).text == L"Нет новых версий", "equal release is current");
     version.latest = L"v1.2.2";
@@ -126,6 +130,97 @@ void TestServerAndUiStates() {
         L"https://github.com/Wei-Shaw/sub2api/releases/tag/v1.2.3%2Bbuild%2Fspace%20%3F%23%25", "tag is one URL path segment");
     Require(std::wstring(MOD_GITHUB_URL) == L"https://github.com/RuffID/windhawk-sub2api-taskbar-dashboard",
         "mod icon opens its own repository");
+}
+
+void TestServerLatestPopupSelection() {
+    // Arrange: server latest has advanced while the hourly GitHub cache has not.
+    std::wstring update = LR"({"has_update":true,"latest_version":"0.2.21",
+        "release_info":{"html_url":"https://github.com/Wei-Shaw/sub2api/releases/tag/v0.2.21"}})";
+    auto read = [&](const std::wstring& resource, wdj::JsonObject& data, DWORD& status) {
+        status = 200;
+        if (resource == L"/system/version") { data = Json(LR"({"version":"0.2.20"})"); }
+        else { data = Json(update); }
+        return true;
+    };
+    auto version = ReadServerVersion(read, [] { return false; });
+    version.latest = L"v0.2.20";
+    version.releaseCheckStatus = ReleaseCheckStatus::Succeeded;
+    // Act
+    auto badge = GetPopupReleaseBadge(version);
+    // Assert
+    Require(badge.text == L"Доступно: 0.2.21" &&
+        badge.releaseUrl == L"https://github.com/Wei-Shaw/sub2api/releases/tag/v0.2.21" &&
+        badge.borderColor == RGB(106, 212, 124) && badge.textColor == POPUP_DEFAULT_TEXT_COLOR,
+        "server update replaces current badge before hourly GitHub refresh");
+    Require(ShouldShowLatestUpdateIndicator(version, -1), "server indicator remains independent");
+
+    // Arrange / Act / Assert: only a version newer than server latest can replace it.
+    for (const auto& tag : {L"v0.2.20", L"v0.2.21-beta.10", L"v0.2.21"}) {
+        version.latest = tag;
+        Require(GetPopupReleaseBadge(version).text == L"Доступно: 0.2.21", "older beta and equal GitHub stable cannot displace latest");
+    }
+    for (const auto& tag : {L"v0.2.22-beta.1", L"v0.2.22"}) {
+        version.latest = tag;
+        badge = GetPopupReleaseBadge(version);
+        Require(badge.text == std::wstring(L"Доступно: ") + tag && badge.releaseUrl == ReleaseTagUrl(tag),
+            "newer GitHub beta or stable replaces server latest and link");
+    }
+
+    // Arrange / Act / Assert: GitHub cannot hide a separately confirmed update.
+    version.latest = L"v9.0.0-beta.1";
+    for (auto state : {ReleaseCheckStatus::Pending, ReleaseCheckStatus::Failed,
+                       ReleaseCheckStatus::RateLimited, ReleaseCheckStatus::Unknown}) {
+        version.releaseCheckStatus = state;
+        Require(GetPopupReleaseBadge(version).text == L"Доступно: 0.2.21", "GitHub non-success cannot hide server latest or use stale tag");
+    }
+    version.releaseCheckStatus = ReleaseCheckStatus::Succeeded;
+    version.latest = L"invalid";
+    Require(GetPopupReleaseBadge(version).text == L"Доступно: 0.2.21", "invalid GitHub tag cannot hide server latest");
+    version.currentStatus = ReleaseCheckStatus::Failed;
+    Require(GetPopupReleaseBadge(version).text == L"Доступно: 0.2.21", "independent current-version failure cannot hide confirmed server update");
+
+    // Arrange / Act / Assert: unsuccessful server checks never publish a latest candidate.
+    for (auto state : {ReleaseCheckStatus::Pending, ReleaseCheckStatus::Failed, ReleaseCheckStatus::RateLimited}) {
+        version.serverCheckStatus = state;
+        version.currentStatus = ReleaseCheckStatus::Succeeded;
+        version.latest = L"v0.2.22-beta.1";
+        Require(GetPopupReleaseBadge(version).text == L"Доступно: v0.2.22-beta.1", "unconfirmed server latest cannot override successful GitHub result");
+    }
+
+    // Arrange / Act / Assert: optional malformed fields retain the flag, without inventing a version or URL.
+    for (const auto& body : {LR"({"has_update":true})", LR"({"has_update":true,"latest_version":null})",
+                            LR"({"has_update":true,"latest_version":"invalid"})",
+                            LR"({"has_update":true,"latest_version":"0.2.21\u0000suffix"})"}) {
+        update = body;
+        version = ReadServerVersion(read, [] { return false; });
+        version.latest = L"v0.2.20";
+        version.releaseCheckStatus = ReleaseCheckStatus::Succeeded;
+        badge = GetPopupReleaseBadge(version);
+        Require(version.serverLatest.empty() && ShouldShowLatestUpdateIndicator(version, 80) &&
+            badge.text == L"Доступна latest-версия" &&
+            badge.releaseUrl == L"https://github.com/Wei-Shaw/sub2api/releases/latest", "unknown latest number cannot claim no updates");
+    }
+    for (const auto& body : {
+        LR"({"has_update":true,"latest_version":"0.2.21"})",
+        LR"({"has_update":true,"latest_version":"0.2.21","release_info":null})",
+        LR"({"has_update":true,"latest_version":"0.2.21","release_info":{"html_url":42}})",
+        LR"({"has_update":true,"latest_version":"0.2.21","release_info":{"html_url":"https://fixture.invalid/release"}})"}) {
+        update = body;
+        version = ReadServerVersion(read, [] { return false; });
+        badge = GetPopupReleaseBadge(version);
+        Require(badge.text == L"Доступно: 0.2.21" &&
+            badge.releaseUrl == L"https://github.com/Wei-Shaw/sub2api/releases/latest", "missing or non-official release link uses official latest page");
+    }
+    update = LR"({"has_update":true,"latest_version":"0.2.21","warning":"fixture warning"})";
+    version = ReadServerVersion(read, [] { return false; });
+    Require(version.serverCheckStatus == ReleaseCheckStatus::Failed && version.serverLatest.empty() &&
+        !ShouldShowLatestUpdateIndicator(version, 80), "upstream warning cannot confirm latest");
+    update = LR"({"has_update":false,"latest_version":"9.0.0"})";
+    version = ReadServerVersion(read, [] { return false; });
+    version.latest = L"v0.2.20";
+    version.releaseCheckStatus = ReleaseCheckStatus::Succeeded;
+    Require(version.serverLatest.empty() && GetPopupReleaseBadge(version).text == L"Нет новых версий" &&
+        !ShouldShowLatestUpdateIndicator(version, 80), "negative server flag does not create a latest candidate");
 }
 
 void TestRateLimits() {
@@ -465,6 +560,7 @@ int main() {
         struct Apartment { ~Apartment() { winrt::uninit_apartment(); } } apartment;
         TestReleaseSelection();
         TestServerAndUiStates();
+        TestServerLatestPopupSelection();
         TestRateLimits();
         TestCredentialsAndRequests();
         TestTokenChangesRespectCache();

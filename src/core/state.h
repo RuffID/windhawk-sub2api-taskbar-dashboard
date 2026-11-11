@@ -100,6 +100,8 @@ enum class ReleaseCheckStatus { Pending, Succeeded, Failed, RateLimited, Unknown
 struct DashboardVersion {
     std::wstring current;
     std::wstring latest;
+    std::wstring serverLatest;
+    std::wstring serverReleaseUrl;
     ReleaseCheckStatus currentStatus = ReleaseCheckStatus::Pending;
     ReleaseCheckStatus serverCheckStatus = ReleaseCheckStatus::Pending;
     ReleaseCheckStatus releaseCheckStatus = ReleaseCheckStatus::Pending;
